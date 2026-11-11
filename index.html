@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema de Gestão de Postes - Menu</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f0f2f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .menu-container {
+    background: #fff;
+    padding: 32px 24px;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+    box-sizing: border-box;
+  }
+  h2 {
+    color: #1a1a1a;
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 22px;
+  }
+  p.subtitle {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 28px;
+  }
+  .btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .btn-menu {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 0.1s ease, background-color 0.2s ease;
+  }
+  .btn-menu:active {
+    transform: scale(0.98);
+  }
+  .btn-admin {
+    background: #1d6fe8;
+    color: #fff;
+  }
+  .btn-admin:hover {
+    background: #155ac7;
+  }
+  .btn-tecnico {
+    background: #1a9b4b;
+    color: #fff;
+  }
+  .btn-tecnico:hover {
+    background: #147a3c;
+  }
+  .status-bar {
+    margin-top: 20px;
+    font-size: 12px;
+    color: #888;
+  }
+</style>
+</head>
+<body>
+
+<div class="menu-container">
+  <h2>Gestão de Campo</h2>
+  <p class="subtitle">Selecione o painel de acesso desejado</p>
+  
+  <div class="btn-group">
+    <a href="admin.html" class="btn-menu btn-admin">
+      <span>🛡️</span> Painel do Administrador
+    </a>
+    <a href="tecnico.html" class="btn-menu btn-tecnico">
+      <span>👷‍♂️</span> Aplicativo do Técnico
+    </a>
+  </div>
+
+  <div class="status-bar" id="auth-status">Verificando sessão...</div>
+</div>
+
+<!-- Firebase SDK para checar sessão no menu -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCLYY7qsUvs1o6QHPBC5m6rqVnALuZo1k",
+    authDomain: "notificacao-65533.firebaseapp.com",
+    projectId: "notificacao-65533",
+    storageBucket: "notificacao-65533.firebasestorage.app",
+    messagingSenderId: "37519865902",
+    appId: "1:37519865902:web:8b7eaf096bada3bfdc7bf"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const statusEl = document.getElementById('auth-status');
+
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      statusEl.textContent = `Conectado como: ${user.email}`;
+    } else {
+      statusEl.textContent = 'Nenhuma sessão ativa no momento';
+    }
+  });
+</script>
+
+</body>
+</html>
