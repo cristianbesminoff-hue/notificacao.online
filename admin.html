@@ -15,20 +15,28 @@
 <style>
   html,body{height:100%;margin:0;font-family:system-ui,sans-serif}
   #map{position:absolute;inset:0;z-index:1}
+  #map.selecting{cursor:crosshair}
   #panel{position:absolute;z-index:1000;left:10px;top:10px;background:#fff;
     border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.3);padding:14px;
-    width:360px;max-height:85vh;overflow-y:auto;box-sizing:border-box}
+    width:360px;max-height:90vh;overflow-y:auto;box-sizing:border-box}
   #login{position:absolute;inset:0;background:#f3f4f6;z-index:2000;display:flex;align-items:center;justify-content:center}
   .login-card{background:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);width:100%;max-width:340px}
   input,select,button{font-size:14px;padding:8px;border-radius:6px;border:1px solid #bbb;width:100%;box-sizing:border-box;margin-top:4px}
   button{background:#1d6fe8;color:#fff;border:0;cursor:pointer;font-weight:600}
   button.sec{background:#e5e7eb;color:#111}
   button.green{background:#16a34a}
+  button.warn{background:#f59e0b;color:#fff}
   label{font-size:12px;font-weight:bold;color:#444;display:block;margin-top:8px}
   .row{display:flex;gap:6px;margin-top:6px}
-  .pin-red{background:#dc2626;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
-  .pin-green{background:#16a34a;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
-  .pin-gray{background:#9ca3af;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  
+  /* Pins e Destaque de Seleção */
+  .pin{color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .1s}
+  .pin-red{background:#dc2626}
+  .pin-green{background:#16a34a}
+  .pin-gray{background:#9ca3af}
+  .pin.selected{border:3px solid #facc15;box-shadow:0 0 0 3px #1d6fe8;transform:scale(1.25);z-index:999!important}
+  
+  .box-sel{background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -51,8 +59,22 @@
     <button class="sec" id="out" style="width:auto;padding:4px 8px;font-size:12px">Sair</button>
   </div>
 
+  <!-- Ferramenta de Seleção por Arraste -->
+  <div class="box-sel">
+    <button id="btnSelectMode">🖱️ Selecionar Área no Mapa</button>
+    <div id="selActions" style="display:none;margin-top:8px">
+      <div style="font-size:13px;font-weight:bold;color:#1e3a8a" id="selCount">0 poste(s) selecionado(s)</div>
+      <label>Enviar selecionados para:</label>
+      <select id="selTech"></select>
+      <div class="row">
+        <button class="green" id="btnAssignSel">✔ Atribuir</button>
+        <button class="sec" id="btnClearSel">Limpar</button>
+      </div>
+    </div>
+  </div>
+
   <details style="margin-top:10px">
-    <summary><b>👷 Cadastrar Técnico</b></summary>
+    <summary style="cursor:pointer"><b>👷 Cadastrar Técnico</b></summary>
     <input id="tn" placeholder="Nome do Técnico">
     <input id="te" type="email" placeholder="E-mail">
     <input id="ts" type="password" placeholder="Senha (mín. 6)">
@@ -62,13 +84,13 @@
   </details>
 
   <details style="margin-top:8px">
-    <summary><b>📥 Importar Planilha (Excel)</b></summary>
+    <summary style="cursor:pointer"><b>📥 Importar Planilha (Excel)</b></summary>
     <input type="file" id="xf" accept=".xlsx, .xls" style="margin-top:6px">
     <div id="map2" style="display:none">
       <label>Nº do poste <select id="mc"></select></label>
       <label>Latitude <select id="ml"></select></label>
       <label>Longitude <select id="mo"></select></label>
-      <label>Atribuir a <select id="mt"></select></label>
+      <label>Atribuir a (opcional) <select id="mt"></select></label>
       <button id="imp" style="margin-top:6px">Importar e Marcar no Mapa</button>
     </div>
     <p id="xm" style="font-size:12px;margin:4px 0"></p>
@@ -76,17 +98,16 @@
 
   <hr style="margin:12px 0;border:0;border-top:1px solid #eee">
   
-  <label>Gerenciar Pontos</label>
-  <div class="row">
-    <select id="fe">
-      <option value="">Todos os Status</option>
-      <option value="red">🔴 Pendentes</option>
-      <option value="green">🟢 Executados</option>
-      <option value="gray">⚪ Concluídos</option>
-    </select>
-  </div>
-  <button class="green" id="dl" style="margin-top:8px">📦 Baixar Fotos (ZIP)</button>
+  <label>Filtrar Status no Mapa</label>
+  <select id="fe">
+    <option value="">Todos os Status</option>
+    <option value="unassigned">⚠️ Sem técnico atribuído</option>
+    <option value="red">🔴 Pendentes (com técnico)</option>
+    <option value="green">🟢 Executados (foto enviada)</option>
+    <option value="gray">⚪ Concluídos</option>
+  </select>
   
+  <button class="green" id="dl" style="margin-top:8px">📦 Baixar Fotos (ZIP)</button>
   <p id="st" style="font-size:12px;color:#555;margin:6px 0 0"></p>
 </div>
 
@@ -94,12 +115,16 @@
 firebase.initializeApp(firebaseConfig);
 const fdb = firebase.database(), au = firebase.auth();
 const $ = id => document.getElementById(id);
+
 let po = {}, meta = {}, cc = {}, tecs = {}, markers = {};
+let selectedIds = new Set();
+let selectMode = false;
 
 const map = L.map('map', { zoomControl: false }).setView([-14.2, -51.9], 4);
 L.control.zoom({ position: 'topright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
+// Autenticação
 $('go').onclick = () => au.signInWithEmailAndPassword($('em').value.trim(), $('pw').value)
   .catch(e => { $('err').textContent = 'Erro ao entrar: ' + e.message; });
 $('out').onclick = () => au.signOut().then(() => location.reload());
@@ -112,20 +137,141 @@ au.onAuthStateChanged(u => {
   fdb.ref('adm/postes').on('value', s => { po = s.val() || {}; atualizarMapa(); });
   fdb.ref('adm/fotos_meta').on('value', s => { meta = s.val() || {}; atualizarMapa(); });
   fdb.ref('adm/concluidos').on('value', s => { cc = s.val() || {}; atualizarMapa(); });
-  fdb.ref('adm/tecnicos').on('value', s => { tecs = s.val() || {}; carregarSelectsTecnicos(); });
+  fdb.ref('adm/tecnicos').on('value', s => { tecs = s.val() || {}; carregarSelectsTecnicos(); atualizarMapa(); });
 });
 
 function carregarSelectsTecnicos() {
-  const mt = $('mt'); mt.innerHTML = '<option value="">— sem técnico —</option>';
-  Object.entries(tecs).forEach(([k, t]) => mt.appendChild(new Option(t.nome, k)));
+  const fill = (el, textoPadrao) => {
+    const valAtual = el.value;
+    el.innerHTML = `<option value="">${textoPadrao}</option>`;
+    Object.entries(tecs).forEach(([k, t]) => el.appendChild(new Option(`${t.nome} (${t.email})`, k)));
+    el.value = valAtual;
+  };
+  fill($('mt'), '— deixar sem técnico por enquanto —');
+  fill($('selTech'), '— remover técnico (deixar livre) —');
   
   const tl = $('tl'); tl.innerHTML = '';
   Object.entries(tecs).forEach(([k, t]) => {
-    tl.innerHTML += `<div>${t.nome} (${t.email})</div>`;
+    tl.innerHTML += `<div style="padding:2px 0;border-bottom:1px solid #eee">${t.nome} · <small>${t.email}</small></div>`;
   });
 }
 
-// Atualiza os marcadores no mapa do admin em tempo real
+// ==========================================
+// LÓGICA DE SELEÇÃO POR RETÂNGULO (ARRASTE)
+// ==========================================
+let startLatLng = null;
+let selectionRect = null;
+
+$('btnSelectMode').onclick = () => {
+  selectMode = !selectMode;
+  const btn = $('btnSelectMode');
+  const mapEl = $('map');
+  if (selectMode) {
+    btn.textContent = '❌ Sair do Modo Seleção';
+    btn.className = 'warn';
+    mapEl.classList.add('selecting');
+    map.dragging.disable();
+  } else {
+    btn.textContent = '🖱️ Selecionar Área no Mapa';
+    btn.className = '';
+    mapEl.classList.remove('selecting');
+    map.dragging.enable();
+  }
+};
+
+map.on('mousedown', (e) => {
+  if (!selectMode) return;
+  startLatLng = e.latlng;
+  if (selectionRect) map.removeLayer(selectionRect);
+  selectionRect = L.rectangle([startLatLng, startLatLng], {
+    color: '#1d6fe8', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.2
+  }).addTo(map);
+});
+
+map.on('mousemove', (e) => {
+  if (!selectMode || !startLatLng || !selectionRect) return;
+  selectionRect.setBounds([startLatLng, e.latlng]);
+});
+
+map.on('mouseup', (e) => {
+  if (!selectMode || !startLatLng || !selectionRect) return;
+  const bounds = L.latLngBounds(startLatLng, e.latlng);
+  
+  // Verifica quais postes estão dentro do retângulo desenhado
+  Object.entries(po).forEach(([id, p]) => {
+    if (markers[id] && bounds.contains([p.lat, p.lng])) {
+      selectedIds.add(id);
+    }
+  });
+
+  map.removeLayer(selectionRect);
+  selectionRect = null;
+  startLatLng = null;
+  atualizarUI_Selecao();
+  atualizarMapa();
+});
+
+function atualizarUI_Selecao() {
+  const box = $('selActions');
+  if (selectedIds.size > 0) {
+    box.style.display = 'block';
+    $('selCount').textContent = `${selectedIds.size} poste(s) selecionado(s)`;
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+$('btnClearSel').onclick = () => {
+  selectedIds.clear();
+  atualizarUI_Selecao();
+  atualizarMapa();
+};
+
+// Função central para atribuir N postes a um técnico
+async function atribuirPostes(idsArray, tecKey) {
+  const t = tecKey ? tecs[tecKey] : null;
+  const up = {};
+
+  idsArray.forEach(id => {
+    const p = po[id];
+    if (!p) return;
+    
+    // Remove da fila do técnico antigo se houver
+    if (p.tec) {
+      const oldKey = p.tec.replace(/\./g, ',');
+      up[`adm/fila/${oldKey}/${id}`] = null;
+    }
+
+    // Atualiza o cadastro principal do poste
+    up[`adm/postes/${id}/tec`] = t ? t.email : '';
+    up[`adm/postes/${id}/tecNome`] = t ? t.nome : '';
+
+    // Adiciona na fila do novo técnico (se não estiver concluído)
+    if (t && !cc[id]) {
+      up[`adm/fila/${tecKey}/${id}`] = {
+        id: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng
+      };
+    }
+  });
+
+  await fdb.ref().update(up);
+}
+
+$('btnAssignSel').onclick = async () => {
+  if (selectedIds.size === 0) return;
+  const tecKey = $('selTech').value;
+  await atribuirPostes([...selectedIds], tecKey);
+  $('st').textContent = `${selectedIds.size} poste(s) atualizado(s) com sucesso!`;
+  selectedIds.clear();
+  atualizarUI_Selecao();
+  
+  // Sai do modo seleção automaticamente após atribuir
+  if (selectMode) $('btnSelectMode').click();
+};
+
+// ==========================================
+// RENDERIZAÇÃO DO MAPA E POPUP INDIVIDUAL
+// ==========================================
 function atualizarMapa() {
   Object.values(markers).forEach(m => map.removeLayer(m));
   markers = {};
@@ -138,13 +284,53 @@ function atualizarMapa() {
     const concluido = cc[id];
     let estado = concluido ? 'gray' : (temFoto ? 'green' : 'red');
 
-    if (filtro && estado !== filtro) return;
+    if (filtro === 'unassigned' && p.tec) return;
+    if (filtro && filtro !== 'unassigned' && estado !== filtro) return;
 
-    let pinClass = estado === 'green' ? 'pin-green' : (estado === 'gray' ? 'pin-gray' : 'pin-red');
-    const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [26,26], iconAnchor: [13,13] });
+    const isSelected = selectedIds.has(id);
+    let pinClass = `pin pin-${estado}` + (isSelected ? ' selected' : '');
     
+    const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [26,26], iconAnchor: [13,13] });
     const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
-    m.bindPopup(`<b>Poste: ${p.code}</b><br>Técnico: ${p.tecNome || 'Nenhum'}<br>Status: ${estado}`);
+    
+    // Clique no marcador: se estiver no modo seleção, alterna seleção; senão abre popup
+    m.on('click', (e) => {
+      if (selectMode) {
+        L.DomEvent.stopPropagation(e);
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        atualizarUI_Selecao();
+        atualizarMapa();
+      }
+    });
+
+    // Conteúdo do Popup com atribuição individual rápida
+    const popDiv = document.createElement('div');
+    popDiv.style.minWidth = '180px';
+    popDiv.innerHTML = `<b>Poste: ${p.code}</b><br><small>Atual: ${p.tecNome || 'Sem técnico'}</small>`;
+    
+    const selInd = document.createElement('select');
+    selInd.style.marginTop = '6px';
+    selInd.innerHTML = '<option value="">— sem técnico —</option>';
+    Object.entries(tecs).forEach(([k, t]) => {
+      const opt = new Option(t.nome, k);
+      if (p.tec === t.email) opt.selected = true;
+      selInd.appendChild(opt);
+    });
+    
+    const btnSalvarInd = document.createElement('button');
+    btnSalvarInd.textContent = 'Salvar Técnico';
+    btnSalvarInd.style.marginTop = '6px';
+    btnSalvarInd.style.padding = '5px';
+    btnSalvarInd.onclick = async () => {
+      await atribuirPostes([id], selInd.value);
+      map.closePopup();
+    };
+
+    popDiv.appendChild(selInd);
+    popDiv.appendChild(btnSalvarInd);
+    m.bindPopup(popDiv);
+
     markers[id] = m;
     coords.push([p.lat, p.lng]);
   });
@@ -205,6 +391,7 @@ $('imp').onclick = async () => {
   await fdb.ref().update(up);
   $('xm').textContent = n + ' postes importados com sucesso!';
   $('map2').style.display = 'none';
+  window.fitInitial = false; // Permite reajustar o zoom para os novos pontos
 };
 
 // Download ZIP
