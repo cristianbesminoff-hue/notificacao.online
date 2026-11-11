@@ -3,10 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mapa de Pontos</title>
+<title>App do Técnico - Campo</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -14,463 +13,191 @@
 <style>
   html,body{height:100%;margin:0;font-family:system-ui,sans-serif}
   #map{position:absolute;inset:0}
+  #login-screen{position:absolute;inset:0;background:#f5f7fa;z-index:2000;display:flex;align-items:center;justify-content:center}
+  .login-card{background:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);width:100%;max-width:340px;box-sizing:border-box}
+  input,button{width:100%;padding:10px;margin-bottom:10px;box-sizing:border-box;border:1px solid #ccc;border-radius:6px;font-size:15px}
+  button{background:#1a9b4b;color:#fff;border:0;font-weight:700;cursor:pointer}
+  
   #panel{position:absolute;z-index:1000;left:0;right:0;bottom:0;background:#fff;
-    border-radius:14px 14px 0 0;box-shadow:0 -2px 12px rgba(0,0,0,.3);padding:10px 12px;
-    max-width:560px;margin:0 auto}
-  #panel.min textarea,#panel.min .hint{display:none}
-  textarea{width:100%;box-sizing:border-box;height:90px;font-size:15px;padding:8px;border:1px solid #bbb;border-radius:8px}
-  .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
-  button{font-size:15px;padding:9px 12px;border:0;border-radius:8px;background:#1d6fe8;color:#fff}
-  button.sec{background:#e5e7eb;color:#111}
-  button.red{background:#d33}
-  .hint{font-size:12px;color:#555;margin:4px 0 0}
-  #msg{font-size:13px;color:#b00;margin-left:auto}
-  .pin{background:#e8501d;color:#fff;border:2px solid #fff;border-radius:50%;
-    width:30px;height:30px;line-height:26px;text-align:center;font-weight:700;font-size:13px;
-    box-shadow:0 1px 4px rgba(0,0,0,.5)}
+    border-radius:14px 14px 0 0;box-shadow:0 -2px 12px rgba(0,0,0,.3);padding:12px;max-width:560px;margin:0 auto}
+  .row{display:flex;gap:6px;align-items:center}
+  
+  .pin-red{background:#dc2626;color:#fff;border:2px solid #fff;border-radius:50%;width:32px;height:32px;line-height:28px;text-align:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .pin-green{background:#16a34a;color:#fff;border:2px solid #fff;border-radius:50%;width:32px;height:32px;line-height:28px;text-align:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .pin-me{background:#2563eb;color:#fff;border:2px solid #fff;border-radius:50%;width:20px;height:20px;line-height:16px;text-align:center;font-size:10px;box-shadow:0 0 8px #2563eb}
+  
   .pop{text-align:center}
-  .pop .cod{font-size:28px;font-weight:700;letter-spacing:3px;margin:2px 0 8px}
-  .pop .cod.long{font-size:20px;letter-spacing:0;word-break:break-word}
-  .pop .info{font-size:12px;color:#555;margin:-2px 0 8px;max-width:220px}
-  .pop .btns{display:flex;gap:6px}
-  .pop button{background:#1a9b4b;flex:1}
-  .pop button.red{background:#d33}
-  .pop button.cam{background:#1d6fe8;width:100%;margin-bottom:6px}
-  .ok{font-size:22px;font-weight:700;color:#1a9b4b}
-  .pin.ok{background:#16a34a}
-  #login{display:none;position:fixed;inset:0;z-index:3000;background:#fff;flex-direction:column;justify-content:center;align-items:center;gap:8px;padding:20px}
-  #login input{width:100%;max-width:320px;box-sizing:border-box;font-size:16px;padding:10px;border:1px solid #bbb;border-radius:8px}
+  .pop .cod{font-size:22px;font-weight:700;margin:4px 0 8px}
+  .pop button{background:#1a9b4b;width:100%;padding:10px}
 </style>
 </head>
 <body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <h3 style="margin-top:0;color:#1a9b4b;text-align:center">Login Técnico</h3>
+    <input type="email" id="email" placeholder="Seu e-mail cadastrado">
+    <input type="password" id="password" placeholder="Sua senha">
+    <button id="btnLogin">Entrar</button>
+    <p id="login-msg" style="color:#d33;font-size:13px;text-align:center;margin:0;"></p>
+  </div>
+</div>
+
 <div id="map"></div>
-<div id="login"><h3>Entrar</h3>
-  <input id="lem" type="email" placeholder="E-mail"><input id="lpw" type="password" placeholder="Senha">
-  <button id="lgo">Entrar</button><p id="lerr" style="color:#b00;font-size:13px"></p></div>
 
 <div id="panel">
-  <textarea id="txt" placeholder="Um ponto por linha:&#10;-30,1510278, -51,1494444, 123&#10;-30,1600000, -51,1500000, 456"></textarea>
-  <p class="hint">Formato: latitude, longitude, código de 3 dígitos. Pode colar vários de uma vez.</p>
   <div class="row">
-    <button id="add">Adicionar</button>
-    <button class="sec" id="me">📍 Eu</button>
-    <button class="sec" id="fit">Ver todos</button>
-    <button class="sec" id="exp">⬇ Exportar</button>
-    <button class="sec" id="imp">⬆ Importar</button>
-    <input type="file" id="file" style="display:none">
-    <button id="kmlb">🗺 Importar do Google Maps</button>
-    <input type="file" id="kml" style="display:none">
-    <button class="sec" id="expf">⬇ Fotos</button>
-    <button class="sec" id="cloud">☁ Enviar</button>
-    <button class="sec" id="sair">Sair</button>
+    <button class="sec" id="me" style="background:#e5e7eb;color:#111">📍 Minha Posição</button>
+    <button class="sec" id="fit" style="background:#e5e7eb;color:#111">Ver Todos</button>
+    <button class="sec" id="btnLogout" style="background:#fee2e2;color:#991b1b;width:auto">Sair</button>
     <input type="file" id="cam" accept="image/*" capture="environment" style="display:none">
-    <button class="sec" id="toggle">▼</button>
-    <span id="msg"></span>
   </div>
-  <div class="row" style="margin-top:4px"><small id="count"></small></div>
+  <p id="msg" style="font-size:13px;color:#555;margin:6px 0 0;text-align:center">Sincronizado</p>
 </div>
 
 <script>
-const KEY = 'mapa_pontos_v1';
-let state = { pts: [], next: 1 };
-try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.pts) state = s; } catch (e) {}
-state.pend = state.pend || [];
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+firebase.initializeApp(firebaseConfig);
+const fdb = firebase.database(), au = firebase.auth();
+const $ = id => document.getElementById(id);
+
+let markers = {}, currentPt = null, lastPos = null, meMarker = null;
 
 const map = L.map('map', { zoomControl: false }).setView([-14.2, -51.9], 4);
 L.control.zoom({ position: 'topright' }).addTo(map);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap'
-}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-const markers = {};           // id -> marker
-const route = L.polyline([], { color: '#1d6fe8', weight: 4, opacity: .8 }).addTo(map);
-
-function updateRoute(){
-  route.setLatLngs(state.pts.map(p => [p.lat, p.lng]));
-  document.getElementById('count').textContent =
-    state.pts.length + ' ponto(s) no mapa';
-}
-
-function makeMarker(p){
-  const icon = L.divIcon({ className: '', html: '<div class="pin' + (p.foto ? ' ok' : '') + '">' + p.n + '</div>',
-    iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14] });
-  const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
-  const box = document.createElement('div');
-  box.className = 'pop';
-  const t = document.createElement('div'); t.textContent = 'Ponto ' + p.n;
-  const c = document.createElement('div');
-  c.className = 'cod' + (String(p.code).length > 6 ? ' long' : '');
-  c.textContent = p.code;
-  box.appendChild(t); box.appendChild(c);
-  if (p.info) { const i = document.createElement('div'); i.className = 'info'; i.textContent = p.info; box.appendChild(i); }
-  const b = document.createElement('button');
-  b.textContent = 'Executar';
-  b.onclick = () => {
-    box.innerHTML = '<div class="ok">OK ✔</div>';
-    setTimeout(() => executar(p.id, true), 700);
-  };
-  const d = document.createElement('button');
-  d.textContent = 'Excluir';
-  d.className = 'red';
-  d.onclick = () => { if (confirm('Excluir o ponto ' + p.n + '?')) executar(p.id); };
-  const btns = document.createElement('div');
-  btns.className = 'btns';
-  btns.appendChild(b); btns.appendChild(d);
-  const cam = document.createElement('button');
-  cam.textContent = '📷 Foto';
-  cam.className = 'cam';
-  cam.onclick = () => { camPt = p; document.getElementById('cam').click(); };
-  box.appendChild(cam);
-  if (!p.remoto) box.appendChild(btns);
-  m.bindPopup(box);
-  markers[p.id] = m;
-}
-
-function executar(id, feito){
-  if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; }
-  state.pts = state.pts.filter(p => p.id !== id);
-  save(); updateRoute();
-}
-
-function addPoints(text){
-  const msg = document.getElementById('msg'); msg.textContent = '';
-  let added = 0, bad = 0;
-  text.split(/\n+/).forEach(line => {
-    if (!line.trim()) return;
-    const m = line.match(/-?\d+(?:[.,]\d+)?/g);
-    if (!m || m.length < 2) { bad++; return; }
-    const lat = parseFloat(m[0].replace(',', '.')), lng = parseFloat(m[1].replace(',', '.'));
-    const code = m[2] || '---';
-    if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (m[2] && !/^\d{3}$/.test(m[2]))) { bad++; return; }
-    const p = { id: Date.now() + '_' + state.next, n: state.next++, lat, lng, code };
-    state.pts.push(p); makeMarker(p); added++;
-  });
-  save(); updateRoute();
-  if (added) fitAll();
-  if (bad) msg.textContent = bad + ' linha(s) inválida(s)';
-  return added;
-}
-
-function fitAll(){
-  if (state.pts.length) map.fitBounds(state.pts.map(p => [p.lat, p.lng]), { padding: [50, 50], maxZoom: 16 });
-}
-
-// carregar salvos
-state.pts.forEach(makeMarker); updateRoute(); fitAll();
-
-// UI
-const txt = document.getElementById('txt');
-document.getElementById('add').onclick = () => { if (addPoints(txt.value)) txt.value = ''; };
-document.getElementById('fit').onclick = fitAll;
-// Exportar / Importar
-document.getElementById('exp').onclick = () => {
-  const blob = new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'pontos-' + new Date().toISOString().slice(0, 10) + '.json';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  document.getElementById('msg').textContent = '';
-};
-const fileIn = document.getElementById('file');
-document.getElementById('imp').onclick = () => fileIn.click();
-fileIn.onchange = () => {
-  const f = fileIn.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    const msg = document.getElementById('msg');
-    try {
-      const data = JSON.parse(r.result);
-      if (!data || !Array.isArray(data.pts)) throw 0;
-      const have = new Set(state.pts.map(p => p.id));
-      let n = 0;
-      data.pts.forEach(p => {
-        if (!p || have.has(p.id) || typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-        state.pts.push(p); makeMarker(p); have.add(p.id); n++;
-      });
-      state.next = Math.max(state.next, data.next || 1, ...state.pts.map(p => p.n + 1));
-      save(); updateRoute(); fitAll();
-      msg.style.color = '#1a9b4b'; msg.textContent = n + ' ponto(s) importado(s)';
-    } catch (e) { msg.style.color = '#b00'; msg.textContent = 'Arquivo inválido'; }
-    fileIn.value = '';
-  };
-  r.readAsText(f);
-};
-
-// Importar KML/KMZ (Google My Maps)
-const kmlIn = document.getElementById('kml');
-document.getElementById('kmlb').onclick = () => kmlIn.click();
-kmlIn.onchange = async () => {
-  const f = kmlIn.files[0]; if (!f) return;
-  const msg = document.getElementById('msg');
-  try {
-    let text;
-    if (/\.kmz$/i.test(f.name)) {
-      const zip = await JSZip.loadAsync(f);
-      const entry = Object.values(zip.files).find(z => /\.kml$/i.test(z.name));
-      if (!entry) throw 0;
-      text = await entry.async('string');
-    } else text = await f.text();
-    const doc = new DOMParser().parseFromString(text, 'text/xml');
-    const have = new Set(state.pts.map(p => p.lat + '|' + p.lng + '|' + p.code));
-    let n = 0;
-    Array.from(doc.getElementsByTagName('Placemark')).forEach(pm => {
-      const pt = pm.getElementsByTagName('Point')[0];
-      if (!pt) return;
-      const co = pt.getElementsByTagName('coordinates')[0];
-      if (!co) return;
-      const [lng, lat] = co.textContent.trim().split(',').map(parseFloat);
-      if (isNaN(lat) || isNaN(lng)) return;
-      const nm = pm.getElementsByTagName('name')[0];
-      const code = (nm && nm.textContent.trim()) || '---';
-      const ds = pm.getElementsByTagName('description')[0];
-      const info = ds ? (new DOMParser().parseFromString(ds.textContent, 'text/html').body.textContent || '').trim().slice(0, 200) : '';
-      const key = lat + '|' + lng + '|' + code;
-      if (have.has(key)) return;
-      have.add(key);
-      const p = { id: Date.now() + '_' + state.next, n: state.next++, lat, lng, code, info };
-      state.pts.push(p); makeMarker(p); n++;
-    });
-    save(); updateRoute(); fitAll();
-    msg.style.color = n ? '#1a9b4b' : '#b00';
-    msg.textContent = n ? n + ' ponto(s) importado(s)' : 'Nenhum ponto encontrado';
-  } catch (e) { msg.style.color = '#b00'; msg.textContent = 'Arquivo inválido'; }
-  kmlIn.value = '';
-};
-
-// ===== Fotos =====
-let camPt = null;
-function db(){ return new Promise((ok, err) => {
-  const r = indexedDB.open('mapa_fotos', 2);
-  r.onupgradeneeded = () => {
-    const st = r.result.objectStoreNames.contains('fotos') ? r.transaction.objectStore('fotos')
-      : r.result.createObjectStore('fotos', { keyPath: 'id', autoIncrement: true });
-    if (!st.indexNames.contains('pid')) st.createIndex('pid', 'pid');
-    if (!st.indexNames.contains('sent')) st.createIndex('sent', 'sent');
-  };
-  r.onsuccess = () => ok(r.result); r.onerror = () => err(r.error);
-}); }
-async function fotoAdd(rec){ const d = await db(); return new Promise((ok, err) => {
-  const t = d.transaction('fotos', 'readwrite'); t.objectStore('fotos').add(rec);
-  t.oncomplete = ok; t.onerror = () => err(t.error); }); }
-async function fotoCount(pid){ const d = await db(); return new Promise((ok, err) => {
-  const q = d.transaction('fotos').objectStore('fotos').index('pid').count(IDBKeyRange.only(pid));
-  q.onsuccess = () => ok(q.result); q.onerror = () => err(q.error); }); }
-async function fotosAll(){ const d = await db(); return new Promise((ok, err) => {
-  const q = d.transaction('fotos').objectStore('fotos').getAll();
-  q.onsuccess = () => ok(q.result); q.onerror = () => err(q.error); }); }
-async function fotosClear(){ const d = await db(); return new Promise((ok, err) => {
-  const t = d.transaction('fotos', 'readwrite'); t.objectStore('fotos').clear();
-  t.oncomplete = ok; t.onerror = () => err(t.error); }); }
-
-async function ruaDe(p){
-  if (p.rua) return p.rua;
-  try {
-    const c = new AbortController(), t = setTimeout(() => c.abort(), 5000);
-    const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=pt-BR&lat='
-      + p.lat + '&lon=' + p.lng, { signal: c.signal });
-    clearTimeout(t);
-    const a = (await r.json()).address || {};
-    const rua = a.road || a.pedestrian || a.residential || a.path || '';
-    if (rua) { const b = a.suburb || a.neighbourhood || ''; p.rua = b ? rua + ' - ' + b : rua; save(); }
-  } catch (e) {}
-  return p.rua || '';
-}
-
-async function carimbar(file, p){
-  const bmp = await createImageBitmap(file);
-  const s = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
-  const W = Math.round(bmp.width * s), H = Math.round(bmp.height * s);
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const x = cv.getContext('2d'); x.drawImage(bmp, 0, 0, W, H);
-  const gps = lastPos ? { lat: lastPos.lat, lng: lastPos.lng, acc: Math.round(window.lastAcc || 0) } : null;
-  const when = new Date();
-  const rua = await ruaDe(p);
-  const lines = [
-    'POSTE ' + p.code,
-    'Rua: ' + (rua || 'não encontrada'),
-    'Poste: ' + p.lat.toFixed(6) + ', ' + p.lng.toFixed(6),
-    gps ? 'GPS: ' + gps.lat.toFixed(6) + ', ' + gps.lng.toFixed(6) + ' (±' + gps.acc + ' m)' : 'GPS: indisponível',
-    when.toLocaleString('pt-BR')
-  ];
-  const fs = Math.max(14, Math.round(Math.min(W, H) / 26));
-  x.font = 'bold ' + fs + 'px sans-serif';
-  const pad = fs * 0.6, lh = fs * 1.3;
-  const w = Math.max(...lines.map(l => x.measureText(l).width)) + pad * 2;
-  const h = lines.length * lh + pad;
-  x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, H - h, w, h);
-  x.fillStyle = '#fff'; x.textBaseline = 'top';
-  lines.forEach((l, i) => x.fillText(l, pad, H - h + pad / 2 + i * lh));
-  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.75));
-  return { blob, gps, when, rua };
-}
-
-const camIn = document.getElementById('cam');
-camIn.onchange = async () => {
-  const f = camIn.files[0], p = camPt; camIn.value = '';
-  if (!f || !p) return;
-  const msg = document.getElementById('msg');
-  try {
-    msg.style.color = '#555'; msg.textContent = 'Salvando foto...';
-    const r = await carimbar(f, p);
-    await fotoAdd({ pid: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng, gps: r.gps, rua: r.rua, sent: p.remoto ? 0 : 2, time: r.when.toISOString(), blob: r.blob });
-    const c = await fotoCount(p.id);
-    msg.style.color = '#1a9b4b';
-    msg.textContent = 'Foto salva · poste ' + p.code + ': ' + c + (r.gps ? '' : ' (sem GPS)');
-    if (p.remoto) { p.foto = true; save(); const mk = markers[p.id]; if (mk && mk._icon && mk._icon.firstChild) mk._icon.firstChild.classList.add('ok'); }
-    flush();
-  } catch (e) { msg.style.color = '#b00'; msg.textContent = 'Erro ao salvar foto'; }
-};
-
-document.getElementById('expf').onclick = async () => {
-  const msg = document.getElementById('msg');
-  try {
-    const all = await fotosAll();
-    if (!all.length) { msg.style.color = '#b00'; msg.textContent = 'Nenhuma foto'; return; }
-    msg.style.color = '#555'; msg.textContent = 'Gerando ZIP...';
-    const zip = new JSZip(), cnt = {};
-    let csv = 'arquivo;poste;rua;lat_poste;lng_poste;lat_gps;lng_gps;precisao_m;data_hora\n';
-    all.forEach(r => {
-      const base = String(r.code).replace(/\s*-\s*/g, '-').replace(/[^\w-]+/g, '_');
-      cnt[base] = (cnt[base] || 0) + 1;
-      const name = 'POSTE-' + base + '_' + cnt[base] + '.jpg';
-      zip.file(name, r.blob);
-      csv += [name, r.code, (r.rua || '').replace(/;/g, ','), r.lat, r.lng, r.gps ? r.gps.lat : '', r.gps ? r.gps.lng : '',
-        r.gps ? r.gps.acc : '', new Date(r.time).toLocaleString('pt-BR')].join(';') + '\n';
-    });
-    zip.file('fotos.csv', '\ufeff' + csv);
-    const out = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(out);
-    a.download = 'fotos-' + new Date().toISOString().slice(0, 10) + '.zip';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    msg.style.color = '#1a9b4b'; msg.textContent = all.length + ' foto(s) exportada(s)';
-    if (confirm('ZIP gerado. Apagar as fotos do aparelho para liberar espaço?\n(Só confirme se o arquivo baixou direitinho.)')) {
-      await fotosClear(); msg.textContent = 'Fotos apagadas do aparelho';
-    }
-  } catch (e) { msg.style.color = '#b00'; msg.textContent = 'Erro ao exportar fotos'; }
-};
-
-// ===== Nuvem (Firebase) =====
-let fdb = null, auth = null;
-try { firebase.initializeApp(firebaseConfig); fdb = firebase.database(); auth = firebase.auth(); } catch (e) {}
-const chave = e => e.toLowerCase().replace(/\./g, ',');
-function put(path, val){
-  if (!fdb) return Promise.resolve(false);
-  const w = fdb.ref(path).set(val).then(() => true, () => false);
-  return Promise.race([w, new Promise(r => setTimeout(() => r(false), 20000))]);
-}
-function blobURL(b){ return new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }); }
-async function fotosPend(){ const d = await db(); return new Promise((ok, err) => {
-  const q = d.transaction('fotos').objectStore('fotos').index('sent').getAll(IDBKeyRange.only(0));
-  q.onsuccess = () => ok(q.result); q.onerror = () => err(q.error); }); }
-async function fotoPut(r){ const d = await db(); return new Promise((ok, err) => {
-  const t = d.transaction('fotos', 'readwrite'); t.objectStore('fotos').put(r);
-  t.oncomplete = ok; t.onerror = () => err(t.error); }); }
-
-let enviando = false;
-async function flush(manual){
-  const msg = document.getElementById('msg');
-  const u = auth && auth.currentUser;
-  if (enviando) return;
-  if (!fdb || !u || !navigator.onLine) { if (manual) { msg.style.color = '#b00'; msg.textContent = 'Sem internet ou sem login'; } return; }
-  enviando = true;
-  try {
-    if (manual) { msg.style.color = '#555'; msg.textContent = 'Enviando...'; }
-    for (const r of await fotosPend()) {
-      const key = new Date(r.time).getTime() + '_' + r.pid;
-      const img = await blobURL(r.blob);
-      const m = { pid: r.pid, n: r.n, code: r.code, rua: r.rua || '', lat: r.lat, lng: r.lng, time: r.time, tec: u.email, tecNome: state.tecNome || u.email };
-      if (r.gps) m.gps = r.gps;
-      if (await put('adm/fotos_data/' + key, { img, tec: u.email }) && await put('adm/fotos_meta/' + key, m)) { r.sent = 1; await fotoPut(r); }
-    }
-    if (manual) {
-      const falta = (await fotosPend()).length;
-      msg.style.color = falta ? '#b00' : '#1a9b4b';
-      msg.textContent = falta ? falta + ' foto(s) pendente(s)' : '☁ Tudo enviado';
-    }
-  } catch (e) { if (manual) { msg.style.color = '#b00'; msg.textContent = 'Erro ao enviar'; } }
-  enviando = false;
-}
-
-// Postes que o administrador atribuiu a este técnico
-let filaRef = null;
-function syncFila(u){
-  const tira = p => { if (markers[p.id]) { map.removeLayer(markers[p.id]); delete markers[p.id]; } };
-  if (state.filaDe !== u.email) { state.pts.filter(p => p.remoto).forEach(tira); state.pts = state.pts.filter(p => !p.remoto); state.filaDe = u.email; }
-  if (filaRef) filaRef.off();
-  filaRef = fdb.ref('adm/fila/' + chave(u.email));
-  filaRef.on('value', s => {
-    const v = s.val() || {};
-    state.pts.filter(p => p.remoto && !v[p.id]).forEach(tira);
-    state.pts = state.pts.filter(p => !p.remoto || v[p.id]);
-    let novos = 0;
-    Object.values(v).sort((a, b) => a.n - b.n).forEach(o => {
-      if (state.pts.some(p => p.id === o.id)) return;
-      const p = { id: o.id, n: o.n, lat: o.lat, lng: o.lng, code: o.code, info: [o.rota, o.info].filter(Boolean).join(' · '), remoto: true };
-      state.pts.push(p); makeMarker(p); novos++;
-    });
-    save(); updateRoute();
-    if (novos) { fitAll(); const m = document.getElementById('msg'); m.style.color = '#1a9b4b'; m.textContent = novos + ' poste(s) novo(s) da sua rota'; }
-  }, () => {});
-}
-
-// Login do técnico
-function erroLogin(e){
-  const c = (e && e.code) || '';
-  if (c === 'auth/operation-not-allowed') return 'Login por e-mail/senha não está ativado no Firebase (Authentication → Sign-in method).';
-  if (c === 'auth/network-request-failed') return 'Sem internet.';
-  if (c === 'auth/too-many-requests') return 'Muitas tentativas. Espere uns minutos.';
-  if (c === 'auth/invalid-api-key') return 'Chave do Firebase inválida (confira o firebase-config.js).';
-  return 'E-mail ou senha incorretos, ou esse usuário não existe no Firebase. (' + c + ')';
-}
-const ov = document.getElementById('login'), lerr = document.getElementById('lerr');
-if (auth) {
-  document.getElementById('lgo').onclick = () => {
-    lerr.textContent = '';
-    auth.signInWithEmailAndPassword(document.getElementById('lem').value.trim(), document.getElementById('lpw').value)
-      .catch(e => { lerr.textContent = erroLogin(e); });
-  };
-  document.getElementById('sair').onclick = () => auth.signOut();
-  auth.onAuthStateChanged(async u => {
-    if (!u) { ov.style.display = 'flex'; return; }
-    if (state.tecEmail !== u.email) {
-      let s = null;
-      try { s = await Promise.race([fdb.ref('adm/tecnicos/' + chave(u.email)).once('value'), new Promise(r => setTimeout(() => r('t'), 8000))]); }
-      catch (e) { s = null; }
-      if (s && s !== 't' && s.exists()) { state.tecEmail = u.email; state.tecNome = s.val().nome; save(); }
-      else if (s !== 't') { lerr.textContent = 'Acesso não liberado pelo administrador.'; auth.signOut(); return; }
-    }
-    ov.style.display = 'none'; syncFila(u); flush();
-  });
-}
-document.getElementById('cloud').onclick = () => flush(true);
-window.addEventListener('online', () => flush());
-setTimeout(() => flush(), 1500);
-
-const panel = document.getElementById('panel');
-document.getElementById('toggle').onclick = e => {
-  panel.classList.toggle('min');
-  e.target.textContent = panel.classList.contains('min') ? '▲' : '▼';
-};
-
-// Minha localização
-let meDot, meCircle, first = true, lastPos = null;
-map.on('locationfound', e => {
-  lastPos = e.latlng; window.lastAcc = e.accuracy;
-  if (!meDot) {
-    meCircle = L.circle(e.latlng, { radius: e.accuracy, color: '#1d6fe8', weight: 1, fillOpacity: .12 }).addTo(map);
-    meDot = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#1d6fe8', fillOpacity: 1 })
-      .addTo(map).bindTooltip('Você está aqui');
-  } else { meDot.setLatLng(e.latlng); meCircle.setLatLng(e.latlng).setRadius(e.accuracy); }
-  if (first && !state.pts.length) map.setView(e.latlng, 16);
-  first = false;
-});
-map.on('locationerror', () => { document.getElementById('msg').textContent = 'Sem permissão de GPS'; });
+// Geolocalização contínua do técnico
 map.locate({ watch: true, enableHighAccuracy: true });
-document.getElementById('me').onclick = () => { if (lastPos) map.setView(lastPos, 17); else map.locate({ watch: true, enableHighAccuracy: true }); };
+map.on('locationfound', e => {
+  lastPos = e.latlng;
+  if (!meMarker) {
+    const icon = L.divIcon({ className: '', html: `<div class="pin-me"></div>`, iconSize: [20,20], iconAnchor: [10,10] });
+    meMarker = L.marker(e.latlng, { icon }).addTo(map).bindPopup("Você está aqui");
+  } else {
+    meMarker.setLatLng(e.latlng);
+  }
+});
+
+$('btnLogin').onclick = () => {
+  au.signInWithEmailAndPassword($('email').value.trim(), $('password').value)
+    .catch(err => { $('login-msg').textContent = 'Erro: ' + err.message; });
+};
+
+$('btnLogout').onclick = () => au.signOut().then(() => location.reload());
+
+au.onAuthStateChanged(user => {
+  if (user) {
+    $('login-screen').style.display = 'none';
+    carregarPontosTecnico(user.email);
+  } else {
+    $('login-screen').style.display = 'flex';
+    Object.values(markers).forEach(m => map.removeLayer(m));
+    markers = {};
+  }
+});
+
+function carregarPontosTecnico(email) {
+  const tecKey = email.replace(/\./g, ',');
+  
+  fdb.ref('adm/fila/' + tecKey).on('value', snapshot => {
+    const pontos = snapshot.val() || {};
+    Object.values(markers).forEach(m => map.removeLayer(m));
+    markers = {};
+
+    let coords = [];
+    Object.values(pontos).forEach(p => {
+      fdb.ref('adm/fotos_meta').orderByChild('pid').equalTo(p.id).once('value').then(metaSnap => {
+        const temFoto = metaSnap.exists();
+        let pinClass = temFoto ? 'pin-green' : 'pin-red';
+
+        const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [32,32], iconAnchor: [16,16] });
+        const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
+        
+        const box = document.createElement('div');
+        box.className = 'pop';
+        box.innerHTML = `<div>Poste</div><div class="cod">${p.code}</div>`;
+        
+        const btn = document.createElement('button');
+        btn.textContent = temFoto ? '📷 Alterar Foto' : '📷 Tirar Foto & Executar';
+        btn.onclick = () => { currentPt = p; $('cam').click(); };
+        box.appendChild(btn);
+        
+        m.bindPopup(box);
+        markers[p.id] = m;
+      });
+
+      coords.push([p.lat, p.lng]);
+    });
+
+    if(coords.length > 0) map.fitBounds(coords, { padding: [50, 50], maxZoom: 16 });
+  });
+}
+
+// Função para buscar o nome da rua através da API reversa do Nominatim (OpenStreetMap)
+async function obterNomeRua(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+    const data = await res.json();
+    if (data && data.address) {
+      return data.address.road || data.address.pedestrian || data.address.suburb || 'Localização via GPS';
+    }
+  } catch(e) {}
+  return 'Localização via GPS';
+}
+
+// Captura Foto, Descobre a Rua e Envia
+$('cam').onchange = async (e) => {
+  const file = e.target.files[0];
+  const p = currentPt;
+  $('cam').value = '';
+  if (!file || !p) return;
+
+  $('msg').textContent = 'Obtendo GPS e endereço...';
+  
+  let ruaNome = 'Desconhecida';
+  if (lastPos) {
+    ruaNome = await obterNomeRua(lastPos.lat, lastPos.lng);
+  }
+
+  $('msg').textContent = 'Processando foto...';
+  
+  const reader = new FileReader();
+  reader.onload = async (event) => {
+    const base64Img = event.target.result;
+    const fotoId = 'foto_' + Date.now();
+    const user = au.currentUser;
+
+    try {
+      const updates = {};
+      updates['adm/fotos_meta/' + fotoId] = {
+        pid: p.id,
+        code: p.code,
+        tec: user.email,
+        rua: ruaNome,
+        time: new Date().toISOString(),
+        gps: lastPos ? { lat: lastPos.lat, lng: lastPos.lng } : null
+      };
+      updates['adm/fotos_data/' + fotoId + '/img'] = base64Img;
+
+      await fdb.ref().update(updates);
+      $('msg').textContent = `Enviado (${ruaNome})!`;
+      map.closePopup();
+    } catch(err) {
+      $('msg').textContent = 'Erro ao enviar foto.';
+    }
+  };
+  reader.readAsDataURL(file);
+};
+
+$('fit').onclick = () => {
+  const values = Object.values(markers);
+  if(values.length > 0) map.fitBounds(new L.featureGroup(values).getBounds(), { padding: [50, 50], maxZoom: 16 });
+};
+
+$('me').onclick = () => {
+  if (lastPos) map.setView(lastPos, 17);
+  else map.locate({ setView: true, maxZoom: 16 });
+};
 </script>
 </body>
 </html>
