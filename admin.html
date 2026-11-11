@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Admin · Rotas e fotos</title>
+<title>Admin · Rotas e Mapas</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -11,360 +13,215 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="firebase-config.js"></script>
 <style>
-  body{font-family:system-ui,sans-serif;margin:0;background:#f3f4f6;color:#111}
-  header{background:#1d6fe8;color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
-  main{max-width:960px;margin:0 auto;padding:12px}
-  input,select,button{font-size:15px;padding:8px 10px;border-radius:8px;border:1px solid #bbb}
-  button{background:#1d6fe8;color:#fff;border:0}
+  html,body{height:100%;margin:0;font-family:system-ui,sans-serif}
+  #map{position:absolute;inset:0;z-index:1}
+  #panel{position:absolute;z-index:1000;left:10px;top:10px;background:#fff;
+    border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.3);padding:14px;
+    width:360px;max-height:85vh;overflow-y:auto;box-sizing:border-box}
+  #login{position:absolute;inset:0;background:#f3f4f6;z-index:2000;display:flex;align-items:center;justify-content:center}
+  .login-card{background:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);width:100%;max-width:340px}
+  input,select,button{font-size:14px;padding:8px;border-radius:6px;border:1px solid #bbb;width:100%;box-sizing:border-box;margin-top:4px}
+  button{background:#1d6fe8;color:#fff;border:0;cursor:pointer;font-weight:600}
   button.sec{background:#e5e7eb;color:#111}
-  label{font-size:13px;display:flex;flex-direction:column;gap:2px}
-  .card{background:#fff;border-radius:10px;padding:10px 12px;margin:8px 0;box-shadow:0 1px 3px rgba(0,0,0,.12)}
-  .pole{border-left:8px solid #dc2626}
-  .pole.green{border-left-color:#16a34a}.pole.gray{border-left-color:#9ca3af;opacity:.75}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .tag{font-size:12px;padding:2px 8px;border-radius:99px;background:#fee2e2;color:#991b1b}
-  .tag.green{background:#dcfce7;color:#166534}.tag.gray{background:#e5e7eb;color:#374151}
-  .th{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-  .th img{height:150px;min-width:80px;border-radius:6px;background:#ddd}
-  h3{margin:16px 0 4px}
-  #login{max-width:340px;margin:40px auto}
-  #login input{width:100%;box-sizing:border-box;margin-bottom:8px}
-  #err{font-size:13px;color:#b00}
-  #st,.leg{font-size:13px;color:#555}
+  button.green{background:#16a34a}
+  label{font-size:12px;font-weight:bold;color:#444;display:block;margin-top:8px}
+  .row{display:flex;gap:6px;margin-top:6px}
+  .pin-red{background:#dc2626;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  .pin-green{background:#16a34a;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  .pin-gray{background:#9ca3af;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 </style>
 </head>
 <body>
-<header><span>🗺 Rotas e fotos · Admin</span><button class="sec" id="out" style="display:none">Sair</button></header>
-<main>
-  <div id="login" class="card">
-    <h3>Entrar</h3>
+
+<div id="login">
+  <div class="login-card">
+    <h3 style="margin-top:0;color:#1d6fe8">Login Admin</h3>
     <input id="em" type="email" placeholder="E-mail do administrador">
     <input id="pw" type="password" placeholder="Senha">
     <button id="go">Entrar</button>
-    <p id="err"></p>
+    <p id="err" style="color:#b00;font-size:13px;text-align:center"></p>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div id="panel" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3 style="margin:0;color:#1d6fe8">Painel Admin</h3>
+    <button class="sec" id="out" style="width:auto;padding:4px 8px;font-size:12px">Sair</button>
   </div>
 
-  <div id="app" style="display:none">
-    <details class="card">
-      <summary><b>👷 Técnicos</b></summary>
-      <div class="row" style="margin-top:8px">
-        <input id="tn" placeholder="Nome" style="flex:1;min-width:110px">
-        <input id="te" type="email" placeholder="E-mail" style="flex:1;min-width:150px">
-        <input id="ts" placeholder="Senha (mín. 6)" style="flex:1;min-width:110px">
-        <button id="addt">Cadastrar</button>
-      </div>
-      <p id="tm" style="font-size:13px"></p>
-      <div id="tl"></div>
-    </details>
+  <details style="margin-top:10px">
+    <summary><b>👷 Cadastrar Técnico</b></summary>
+    <input id="tn" placeholder="Nome do Técnico">
+    <input id="te" type="email" placeholder="E-mail">
+    <input id="ts" type="password" placeholder="Senha (mín. 6)">
+    <button id="addt" style="margin-top:6px">Cadastrar</button>
+    <p id="tm" style="font-size:12px;margin:4px 0"></p>
+    <div id="tl" style="font-size:13px;max-height:100px;overflow-y:auto"></div>
+  </details>
 
-    <details class="card">
-      <summary><b>📥 Importar rota (Excel)</b></summary>
-      <div class="row" style="margin-top:8px"><input type="file" id="xf"></div>
-      <div id="map2" style="display:none">
-        <div class="row" style="margin-top:8px">
-          <label>Nº do poste <select id="mc"></select></label>
-          <label>Latitude <select id="ml"></select></label>
-          <label>Longitude <select id="mo"></select></label>
-          <label>Info (opcional) <select id="mi"></select></label>
-          <label>Atribuir a <select id="mt"></select></label>
-          <button id="imp">Importar</button>
-        </div>
-      </div>
-      <p id="xm" style="font-size:13px"></p>
-    </details>
+  <details style="margin-top:8px">
+    <summary><b>📥 Importar Planilha (Excel)</b></summary>
+    <input type="file" id="xf" accept=".xlsx, .xls" style="margin-top:6px">
+    <div id="map2" style="display:none">
+      <label>Nº do poste <select id="mc"></select></label>
+      <label>Latitude <select id="ml"></select></label>
+      <label>Longitude <select id="mo"></select></label>
+      <label>Atribuir a <select id="mt"></select></label>
+      <button id="imp" style="margin-top:6px">Importar e Marcar no Mapa</button>
+    </div>
+    <p id="xm" style="font-size:12px;margin:4px 0"></p>
+  </details>
 
-    <div class="card row">
-      <input id="q" placeholder="Buscar poste, rua, técnico ou rota" style="flex:1;min-width:140px">
-      <select id="fe">
-        <option value="">Todos</option>
-        <option value="red">🔴 Aguardando foto</option>
-        <option value="green">🟢 Foto recebida</option>
-        <option value="gray">⚪ Concluídos</option>
-      </select>
-      <button class="sec" id="all">Marcar todos</button>
-    </div>
-    <div class="card row">
-      <span style="font-size:13px">Marcados:</span>
-      <select id="bt"></select><button id="bat">Atribuir</button>
-      <button id="bco">✔ Concluir</button>
-      <button class="sec" id="bex">🗑 Excluir</button>
-      <select id="lote">
-        <option value="0">Baixar tudo num ZIP</option>
-        <option value="2">ZIPs de 2 postes</option>
-        <option value="5">ZIPs de 5 postes</option>
-        <option value="10">ZIPs de 10 postes</option>
-      </select>
-      <button id="dl">⬇ Baixar</button>
-    </div>
-    <p class="leg">🔴 carregado, aguardando foto · 🟢 técnico enviou foto · ⚪ concluído (depois de baixar)</p>
-    <p id="st"></p>
-    <div id="list"></div>
+  <hr style="margin:12px 0;border:0;border-top:1px solid #eee">
+  
+  <label>Gerenciar Pontos</label>
+  <div class="row">
+    <select id="fe">
+      <option value="">Todos os Status</option>
+      <option value="red">🔴 Pendentes</option>
+      <option value="green">🟢 Executados</option>
+      <option value="gray">⚪ Concluídos</option>
+    </select>
   </div>
-</main>
+  <button class="green" id="dl" style="margin-top:8px">📦 Baixar Fotos (ZIP)</button>
+  
+  <p id="st" style="font-size:12px;color:#555;margin:6px 0 0"></p>
+</div>
 
 <script>
 firebase.initializeApp(firebaseConfig);
 const fdb = firebase.database(), au = firebase.auth();
 const $ = id => document.getElementById(id);
-const el = (t, x, c) => { const e = document.createElement(t); if (x) e.textContent = x; if (c) e.className = c; return e; };
-let po = {}, meta = {}, cc = {}, tecs = {}, byId = {}, vis = [], linhas = [], rotaNome = '';
-const sel = new Set(), open = new Set();
-const TXT = { red: '🔴 aguardando foto', green: '🟢 foto recebida', gray: '⚪ concluído' };
-const say = (m, c) => { $('st').style.color = c || '#555'; $('st').textContent = m; };
+let po = {}, meta = {}, cc = {}, tecs = {}, markers = {};
 
-function erroLogin(e){
-  const c = (e && e.code) || '';
-  if (c === 'auth/operation-not-allowed') return 'Login por e-mail/senha não está ativado no Firebase (Authentication → Sign-in method).';
-  if (c === 'auth/network-request-failed') return 'Sem internet.';
-  if (c === 'auth/too-many-requests') return 'Muitas tentativas. Espere uns minutos.';
-  if (c === 'auth/invalid-api-key') return 'Chave do Firebase inválida (confira o firebase-config.js).';
-  return 'E-mail ou senha incorretos, ou esse usuário não existe no Firebase. (' + c + ')';
-}
+const map = L.map('map', { zoomControl: false }).setView([-14.2, -51.9], 4);
+L.control.zoom({ position: 'topright' }).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
 $('go').onclick = () => au.signInWithEmailAndPassword($('em').value.trim(), $('pw').value)
-  .catch(e => { $('err').textContent = erroLogin(e); });
+  .catch(e => { $('err').textContent = 'Erro ao entrar: ' + e.message; });
 $('out').onclick = () => au.signOut().then(() => location.reload());
 
 au.onAuthStateChanged(u => {
-  $('login').style.display = u ? 'none' : '';
-  $('app').style.display = u ? '' : 'none';
-  $('out').style.display = u ? '' : 'none';
+  $('login').style.display = u ? 'none' : 'flex';
+  $('panel').style.display = u ? 'block' : 'none';
   if (!u) return;
-  const erro = () => say('Sem permissão. O e-mail logado é ' + u.email + ' e precisa ser exatamente igual ao valor de config/admin no banco (tudo minúsculo). Confira também se as regras foram publicadas.', '#b00');
-  const L = (path, set) => fdb.ref(path).on('value', s => { set(s.val() || {}); draw(); }, erro);
-  L('adm/postes', v => po = v); L('adm/fotos_meta', v => meta = v); L('adm/concluidos', v => cc = v);
-  fdb.ref('adm/tecnicos').on('value', s => { tecs = s.val() || {}; drawTecs(); draw(); }, erro);
+  
+  fdb.ref('adm/postes').on('value', s => { po = s.val() || {}; atualizarMapa(); });
+  fdb.ref('adm/fotos_meta').on('value', s => { meta = s.val() || {}; atualizarMapa(); });
+  fdb.ref('adm/concluidos').on('value', s => { cc = s.val() || {}; atualizarMapa(); });
+  fdb.ref('adm/tecnicos').on('value', s => { tecs = s.val() || {}; carregarSelectsTecnicos(); });
 });
 
-// ---------- Técnicos ----------
-function fillSel(s, vazio){
-  const v = s.value; s.innerHTML = ''; s.appendChild(new Option(vazio, ''));
-  Object.entries(tecs).forEach(([k, t]) => s.appendChild(new Option(t.nome, k))); s.value = v;
-}
-function drawTecs(){
-  const L = $('tl'); L.innerHTML = '';
+function carregarSelectsTecnicos() {
+  const mt = $('mt'); mt.innerHTML = '<option value="">— sem técnico —</option>';
+  Object.entries(tecs).forEach(([k, t]) => mt.appendChild(new Option(t.nome, k)));
+  
+  const tl = $('tl'); tl.innerHTML = '';
   Object.entries(tecs).forEach(([k, t]) => {
-    const r = el('div', '', 'row'); r.style.margin = '4px 0';
-    const i = el('span', t.nome + ' · ' + t.email); i.style.flex = '1';
-    const b = el('button', 'Remover', 'sec');
-    b.onclick = () => { if (confirm('Remover o acesso de ' + t.nome + '?')) fdb.ref('adm/tecnicos/' + k).remove(); };
-    r.append(i, b); L.appendChild(r);
+    tl.innerHTML += `<div>${t.nome} (${t.email})</div>`;
   });
-  fillSel($('mt'), '— sem técnico —'); fillSel($('bt'), '— sem técnico —');
 }
+
+// Atualiza os marcadores no mapa do admin em tempo real
+function atualizarMapa() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+
+  const filtro = $('fe').value;
+  let coords = [];
+
+  Object.entries(po).forEach(([id, p]) => {
+    const temFoto = Object.values(meta).some(m => m.pid === id);
+    const concluido = cc[id];
+    let estado = concluido ? 'gray' : (temFoto ? 'green' : 'red');
+
+    if (filtro && estado !== filtro) return;
+
+    let pinClass = estado === 'green' ? 'pin-green' : (estado === 'gray' ? 'pin-gray' : 'pin-red');
+    const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [26,26], iconAnchor: [13,13] });
+    
+    const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
+    m.bindPopup(`<b>Poste: ${p.code}</b><br>Técnico: ${p.tecNome || 'Nenhum'}<br>Status: ${estado}`);
+    markers[id] = m;
+    coords.push([p.lat, p.lng]);
+  });
+
+  if (coords.length > 0 && !window.fitInitial) {
+    map.fitBounds(coords, { padding: [50, 50], maxZoom: 16 });
+    window.fitInitial = true;
+  }
+}
+
+$('fe').onchange = atualizarMapa;
+
+// Cadastro de Técnico
 $('addt').onclick = async () => {
   const nome = $('tn').value.trim(), em = $('te').value.trim().toLowerCase(), sn = $('ts').value;
-  const m = $('tm'); m.style.color = '#b00';
-  if (!nome || !em || sn.length < 6) { m.textContent = 'Preencha nome, e-mail e senha (mínimo 6 caracteres)'; return; }
-  m.style.color = '#555'; m.textContent = 'Cadastrando...';
+  const m = $('tm');
+  if (!nome || !em || sn.length < 6) { m.textContent = 'Preencha nome, e-mail e senha (mín. 6)'; return; }
   try {
     const app2 = firebase.apps.find(a => a.name === 'sec') || firebase.initializeApp(firebaseConfig, 'sec');
-    let jaTinha = false;
-    try { await app2.auth().createUserWithEmailAndPassword(em, sn); }
-    catch (e) { if (e && e.code === 'auth/email-already-in-use') jaTinha = true; else throw e; }
+    try { await app2.auth().createUserWithEmailAndPassword(em, sn); } catch(e){}
     await app2.auth().signOut();
     await fdb.ref('adm/tecnicos/' + em.replace(/\./g, ',')).set({ nome, email: em });
-    m.style.color = '#16a34a';
-    m.textContent = jaTinha ? 'Acesso liberado. O e-mail já existia, então a senha antiga continua valendo.' : 'Técnico cadastrado.';
+    m.style.color = '#16a34a'; m.textContent = 'Técnico cadastrado com sucesso!';
     $('tn').value = $('te').value = $('ts').value = '';
-  } catch (e) { m.style.color = '#b00'; m.textContent = 'Erro ao cadastrar (' + ((e && e.code) || 'desconhecido') + ')'; }
+  } catch(e) { m.style.color = '#b00'; m.textContent = 'Erro ao cadastrar.'; }
 };
 
-// ---------- Importar Excel ----------
-$('xf').onchange = async () => {
-  const f = $('xf').files[0], m = $('xm'); if (!f) return;
-  try {
-    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
-    linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' }).filter(r => r.some(c => c !== ''));
-    rotaNome = f.name.replace(/\.[^.]+$/, '');
-    const h = (linhas[0] || []).map((x, i) => String(x).trim() || 'Coluna ' + (i + 1));
-    const sem = x => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const fill = (id, res, opc) => {
-      const s = $(id); s.innerHTML = ''; if (opc) s.appendChild(new Option('— nenhum —', ''));
-      h.forEach((x, i) => s.appendChild(new Option(x, i)));
-      let k = -1; for (const re of res) { k = h.findIndex(x => re.test(sem(x))); if (k >= 0) break; }
-      s.value = k >= 0 ? k : (opc ? '' : 0);
-    };
-    fill('mc', [/^local$/i, /poste/i, /numero|^n[o°]/i, /cod/i]);
-    fill('ml', [/^lat/i, /localiza|coord|posicao/i]);
-    fill('mo', [/^lon|^lng|^long/i, /localiza|coord|posicao/i]);
-    fill('mi', [/componente/i, /obs|info|rua|endere/i], true);
-    $('map2').style.display = ''; m.style.color = '#555';
-    m.textContent = (linhas.length - 1) + ' linha(s) em "' + rotaNome + '". Confira as colunas e clique em Importar.';
-  } catch (e) { m.style.color = '#b00'; m.textContent = 'Não consegui ler a planilha'; }
+// Importação Excel
+$('xf').onchange = async (e) => {
+  const f = e.target.files[0], m = $('xm'); if (!f) return;
+  const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }).filter(r => r.some(c => c !== ''));
+  const h = linhas[0] || [];
+  
+  const fill = (id) => { const s = $(id); s.innerHTML = ''; h.forEach((x, i) => s.appendChild(new Option(x, i))); };
+  fill('mc'); fill('ml'); fill('mo');
+  $('map2').style.display = 'block';
+  window.excelLinhas = linhas.slice(1);
+  m.textContent = window.excelLinhas.length + ' linhas encontradas na planilha.';
 };
-const filaItem = p => ({ id: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng, info: p.info || '', rota: p.rota || '' });
+
 $('imp').onclick = async () => {
-  const m = $('xm'), ci = +$('mc').value, la = +$('ml').value, lo = +$('mo').value;
-  const ii = $('mi').value === '' ? -1 : +$('mi').value, tk = $('mt').value, t = tk ? tecs[tk] : null;
-  const num = v => parseFloat(String(v).replace(',', '.'));
-  const up = {}, stamp = Date.now(); let n = 0, bad = 0;
-  linhas.slice(1).forEach(r => {
-    let lat, lng;
-    if (la === lo) { const k = String(r[la]).match(/-?\d+(?:[.,]\d+)?/g); if (k && k.length >= 2) { lat = num(k[0]); lng = num(k[1]); } }
-    else { lat = num(r[la]); lng = num(r[lo]); }
-    if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) { bad++; return; }
+  const ci = +$('mc').value, la = +$('ml').value, lo = +$('mo').value;
+  const tk = $('mt').value, t = tk ? tecs[tk] : null;
+  const up = {}, stamp = Date.now(); let n = 0;
+
+  window.excelLinhas.forEach(r => {
+    const lat = parseFloat(String(r[la]).replace(',', '.'));
+    const lng = parseFloat(String(r[lo]).replace(',', '.'));
+    if (isNaN(lat) || isNaN(lng)) return;
     n++;
-    const id = stamp + '_' + n + Math.random().toString(36).slice(2, 5);
-    const p = { id, n, code: String(r[ci] ?? '').trim() || '---', lat, lng, info: ii >= 0 ? String(r[ii] ?? '').trim().slice(0, 200) : '',
-      rota: rotaNome, tec: t ? t.email : '', tecNome: t ? t.nome : '', criado: new Date().toISOString() };
+    const id = stamp + '_' + n;
+    const p = { id, n, code: String(r[ci] || '---'), lat, lng, tec: t ? t.email : '', tecNome: t ? t.nome : '' };
     up['adm/postes/' + id] = p;
-    if (t) up['adm/fila/' + tk + '/' + id] = filaItem(p);
+    if (t) up['adm/fila/' + tk + '/' + id] = p;
   });
-  if (!n) { m.style.color = '#b00'; m.textContent = 'Nenhuma linha com coordenada válida. Confira as colunas.'; return; }
-  try {
-    await fdb.ref().update(up);
-    m.style.color = '#16a34a';
-    m.textContent = n + ' poste(s) importado(s)' + (t ? ' e atribuído(s) a ' + t.nome : ' sem técnico') + (bad ? ' · ' + bad + ' linha(s) sem coordenada ignorada(s)' : '');
-    $('map2').style.display = 'none'; $('xf').value = '';
-  } catch (e) { m.style.color = '#b00'; m.textContent = 'Erro ao importar (confira as regras)'; }
+
+  await fdb.ref().update(up);
+  $('xm').textContent = n + ' postes importados com sucesso!';
+  $('map2').style.display = 'none';
 };
 
-// ---------- Ações ----------
-function atribuir(ids, tk){
-  const t = tk ? tecs[tk] : null, up = {};
-  ids.forEach(id => {
-    const x = byId[id]; if (!x) return;
-    if (x.tecKey) up['adm/fila/' + x.tecKey + '/' + id] = null;
-    up['adm/postes/' + id + '/tec'] = t ? t.email : '';
-    up['adm/postes/' + id + '/tecNome'] = t ? t.nome : '';
-    if (t && !x.concl) up['adm/fila/' + tk + '/' + id] = filaItem(x);
-  });
-  return fdb.ref().update(up);
-}
-function concluir(ids, reabrir){
-  const up = {}, now = new Date().toISOString();
-  ids.forEach(id => {
-    const x = byId[id]; if (!x) return;
-    up['adm/concluidos/' + id] = reabrir ? null : now;
-    if (x.tecKey) up['adm/fila/' + x.tecKey + '/' + id] = reabrir ? filaItem(x) : null;
-  });
-  return fdb.ref().update(up);
-}
-function excluir(ids){
-  const up = {};
-  ids.forEach(id => {
-    const x = byId[id]; if (!x) return;
-    up['adm/postes/' + id] = null; up['adm/concluidos/' + id] = null;
-    if (x.tecKey) up['adm/fila/' + x.tecKey + '/' + id] = null;
-  });
-  return fdb.ref().update(up);
-}
-const marcados = () => [...sel].filter(id => byId[id]);
-$('bat').onclick = async () => {
-  const a = marcados(); if (!a.length) return say('Marque os postes primeiro', '#b00');
-  await atribuir(a, $('bt').value); sel.clear(); say(a.length + ' poste(s) atribuído(s)', '#16a34a');
-};
-$('bco').onclick = async () => {
-  const a = marcados(); if (!a.length) return say('Marque os postes primeiro', '#b00');
-  await concluir(a); sel.clear(); say(a.length + ' poste(s) concluído(s)', '#16a34a');
-};
-$('bex').onclick = async () => {
-  const a = marcados(); if (!a.length) return say('Marque os postes primeiro', '#b00');
-  if (!confirm('Excluir ' + a.length + ' poste(s) da rota? As fotos já enviadas continuam no banco.')) return;
-  await excluir(a); sel.clear(); say(a.length + ' poste(s) excluído(s)', '#16a34a');
-};
-
-// ---------- Lista ----------
-function grupos(){
-  byId = {};
-  Object.entries(po).forEach(([id, o]) => { byId[id] = { ...o, id, fotos: [], tecKey: o.tec ? o.tec.replace(/\./g, ',') : '' }; });
-  Object.entries(meta).forEach(([k, m]) => { const x = byId[m.pid]; if (x) x.fotos.push({ k, ...m }); });
-  const arr = Object.values(byId);
-  arr.forEach(x => {
-    x.fotos.sort((a, b) => a.time < b.time ? -1 : 1);
-    x.concl = cc[x.id];
-    x.estado = x.concl ? 'gray' : x.fotos.length ? 'green' : 'red';
-  });
-  const nm = x => x.tecNome || '~';
-  return arr.sort((a, b) => nm(a).localeCompare(nm(b)) || String(a.rota).localeCompare(String(b.rota)) || (a.n || 0) - (b.n || 0));
-}
-const slug = c => String(c).replace(/\s*-\s*/g, '-').replace(/[^\w-]+/g, '_');
-const nome = (x, i) => 'POSTE-' + slug(x.code) + '_' + (i + 1) + '.jpg';
-
-function draw(){
-  const q = $('q').value.toLowerCase(), fe = $('fe').value;
-  const gs = grupos().filter(x => (!fe || x.estado === fe) && [x.code, x.rua, x.tecNome, x.rota, x.info].join(' ').toLowerCase().includes(q));
-  vis = gs;
-  const c = k => gs.filter(x => x.estado === k).length;
-  say(gs.length + ' poste(s) · 🔴 ' + c('red') + ' · 🟢 ' + c('green') + ' · ⚪ ' + c('gray'));
-  const L = $('list'); L.innerHTML = ''; let last = null;
-  gs.forEach(x => {
-    const tn = x.tecNome || 'Sem técnico atribuído';
-    if (tn !== last) {
-      last = tn; const t = gs.filter(y => (y.tecNome || 'Sem técnico atribuído') === tn);
-      L.appendChild(el('h3', '👷 ' + tn + ' · ' + t.length + ' poste(s) · ' + t.filter(y => y.estado === 'green').length + ' com foto'));
+// Download ZIP
+$('dl').onclick = async () => {
+  const zip = new JSZip();
+  let count = 0;
+  for(const [k, m] of Object.entries(meta)) {
+    const imgData = (await fdb.ref('adm/fotos_data/' + k + '/img').once('value')).val();
+    if(imgData) {
+      zip.file(`poste_${m.code}_${count+1}.jpg`, imgData.split(',')[1], {base64: true});
+      count++;
     }
-    const card = el('div', '', 'card pole ' + x.estado), r = el('div', '', 'row');
-    const cb = el('input'); cb.type = 'checkbox'; cb.checked = sel.has(x.id);
-    cb.onchange = () => { cb.checked ? sel.add(x.id) : sel.delete(x.id); };
-    const as = document.createElement('select'); as.appendChild(new Option('— sem técnico —', ''));
-    Object.entries(tecs).forEach(([k, t]) => as.appendChild(new Option(t.nome, k))); as.value = x.tecKey;
-    as.onchange = () => atribuir([x.id], as.value);
-    const info = el('span', [x.rota, x.info, x.fotos.length + ' foto(s)'].filter(Boolean).join(' · '));
-    info.style.flex = '1'; info.style.fontSize = '13px';
-    const v = el('button', open.has(x.id) ? 'Ocultar' : 'Ver fotos', 'sec');
-    v.onclick = () => { open.has(x.id) ? open.delete(x.id) : open.add(x.id); draw(); };
-    const d = el('button', '⬇', 'sec'); d.title = 'Baixar fotos deste poste'; d.onclick = () => baixar([x], 0);
-    const k = el('button', x.concl ? 'Reabrir' : '✔ Concluir', x.concl ? 'sec' : '');
-    k.onclick = () => concluir([x.id], !!x.concl);
-    r.append(cb, el('b', 'Poste ' + x.code), el('span', TXT[x.estado], 'tag ' + x.estado), as, info, v, d, k);
-    card.appendChild(r);
-    if (open.has(x.id)) { const th = el('div', '', 'th'); card.appendChild(th); thumbs(x, th); }
-    L.appendChild(card);
-  });
-}
-$('q').oninput = draw; $('fe').onchange = draw;
-$('all').onclick = () => { const todos = vis.every(x => sel.has(x.id)); vis.forEach(x => todos ? sel.delete(x.id) : sel.add(x.id)); draw(); };
-
-function thumbs(x, box){
-  x.fotos.forEach((f, i) => {
-    const fig = el('div'), a = el('a'), im = el('img'); a.appendChild(im); a.download = nome(x, i);
-    const g = f.gps, cap = el('div', g ? 'GPS ' + g.lat.toFixed(6) + ', ' + g.lng.toFixed(6) + ' (±' + g.acc + ' m)' : 'sem GPS');
-    cap.style.cssText = 'font-size:11px;color:#555';
-    fig.append(a, cap); box.appendChild(fig);
-    fdb.ref('adm/fotos_data/' + f.k + '/img').once('value').then(s => { im.src = a.href = s.val(); });
-  });
-}
-
-// ---------- Download ----------
-function salvar(blob, nm){
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nm;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-}
-async function baixar(gs, size){
-  gs = gs.filter(x => x.fotos.length);
-  if (!gs.length) { say('Nada para baixar (nenhum poste marcado tem foto)', '#b00'); return; }
-  const n = size || gs.length, lotes = [];
-  for (let i = 0; i < gs.length; i += n) lotes.push(gs.slice(i, i + n));
-  try {
-    for (let li = 0; li < lotes.length; li++) {
-      const zip = new JSZip();
-      let csv = 'arquivo;poste;tecnico;rota;rua;lat_poste;lng_poste;lat_gps_tecnico;lng_gps_tecnico;precisao_m;data_hora\n';
-      for (const x of lotes[li]) {
-        for (const [i, f] of x.fotos.entries()) {
-          say('Baixando ' + (lotes.length > 1 ? 'ZIP ' + (li + 1) + '/' + lotes.length + ' · ' : '') + 'poste ' + x.code + '...');
-          const img = (await fdb.ref('adm/fotos_data/' + f.k + '/img').once('value')).val();
-          if (!img) continue;
-          const nm = nome(x, i), g = f.gps || {};
-          zip.file(nm, img.split(',')[1], { base64: true });
-          csv += [nm, x.code, x.tecNome, x.rota, (f.rua || '').replace(/;/g, ','), x.lat, x.lng, g.lat ?? '', g.lng ?? '', g.acc ?? '',
-            new Date(f.time).toLocaleString('pt-BR')].join(';') + '\n';
-        }
-      }
-      zip.file('fotos.csv', '\ufeff' + csv);
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-      const base = gs.length === 1 ? 'POSTE-' + slug(gs[0].code)
-        : 'postes' + (lotes.length > 1 ? '-parte' + (li + 1) + 'de' + lotes.length : '-todos');
-      salvar(blob, base + '.zip');
-      await new Promise(r => setTimeout(r, 700));
-    }
-    say('Download concluído. Agora marque os postes e clique em Concluir.', '#16a34a');
-  } catch (e) { say('Erro ao baixar', '#b00'); }
-}
-$('dl').onclick = () => {
-  const gs = grupos().filter(x => x.estado !== 'red');
-  baixar(sel.size ? gs.filter(x => sel.has(x.id)) : gs, +$('lote').value);
+  }
+  if(count === 0) { alert('Nenhuma foto encontrada para baixar.'); return; }
+  const content = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = 'fotos_postes.zip';
+  a.click();
 };
 </script>
 </body>
