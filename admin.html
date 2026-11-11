@@ -88,9 +88,8 @@
     <summary style="cursor:pointer"><b>📥 Importar Planilha (Excel)</b></summary>
     <input type="file" id="xf" accept=".xlsx, .xls" style="margin-top:6px">
     <div id="map2" style="display:none">
-      <label>Nº do poste <select id="mc"></select></label>
-      <label>Latitude <select id="ml"></select></label>
-      <label>Longitude <select id="mo"></select></label>
+      <label>Coluna do Poste (Local) <select id="mc"></select></label>
+      <label>Coluna de Coordenadas (Localização) <select id="mo"></select></label>
       <label>Atribuir a (opcional) <select id="mt"></select></label>
       <button id="imp" style="margin-top:6px">Importar e Marcar no Mapa</button>
     </div>
@@ -180,11 +179,9 @@ $('btnZerar').onclick = async () => {
   $('st').textContent = 'Verificando senha e limpando banco...';
 
   try {
-    // Tenta reautenticar o admin com a senha digitada para garantir que é ele mesmo
     const credential = firebase.auth.EmailAuthProvider.credential(user.email, senhaDigitada);
     await user.reauthenticateWithCredential(credential);
 
-    // Se a senha estiver correta, apaga os nós do Realtime Database
     const updates = {};
     updates['adm/postes'] = null;
     updates['adm/fila'] = null;
@@ -398,7 +395,7 @@ $('addt').onclick = async () => {
   } catch(e) { m.style.color = '#b00'; m.textContent = 'Erro ao cadastrar.'; }
 };
 
-// Importação Excel
+// Importação Excel (Lendo 'Local' e 'Localização')
 $('xf').onchange = async (e) => {
   const f = e.target.files[0], m = $('xm'); if (!f) return;
   const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
@@ -406,30 +403,64 @@ $('xf').onchange = async (e) => {
   const h = linhas[0] || [];
   
   const fill = (id) => { const s = $(id); s.innerHTML = ''; h.forEach((x, i) => s.appendChild(new Option(x, i))); };
-  fill('mc'); fill('ml'); fill('mo');
+  fill('mc'); // Coluna Local
+  fill('mo'); // Coluna Localização
+
+  // Auto-seleciona se encontrar os nomes padrão
+  h.forEach((x, i) => {
+    const nomeCol = String(x).trim().toLowerCase();
+    if (nomeCol === 'local') $('mc').value = i;
+    if (nomeCol === 'localização' || nomeCol === 'localizacao') $('mo').value = i;
+  });
+
   $('map2').style.display = 'block';
   window.excelLinhas = linhas.slice(1);
   m.textContent = window.excelLinhas.length + ' linhas encontradas na planilha.';
 };
 
 $('imp').onclick = async () => {
-  const ci = +$('mc').value, la = +$('ml').value, lo = +$('mo').value;
+  const ci = +$('mc').value;     // Coluna Local (Poste)
+  const loCol = +$('mo').value; // Coluna Localização (Coordenadas)
   const tk = $('mt').value, t = tk ? tecs[tk] : null;
-  const up = {}, stamp = Date.now(); let n = 0;
+  const up = {}, stamp = Date.now(); let n = 0, bad = 0;
 
   window.excelLinhas.forEach(r => {
-    const lat = parseFloat(String(r[la]).replace(',', '.'));
-    const lng = parseFloat(String(r[lo]).replace(',', '.'));
-    if (isNaN(lat) || isNaN(lng)) return;
+    const locStr = String(r[loCol] || '').trim();
+    const coordsMatch = locStr.match(/-?\d+(?:[.,]\d+)?/g);
+    
+    if (!coordsMatch || coordsMatch.length < 2) {
+      bad++;
+      return; // Ignora linhas gerais (cidade/bairro) sem coordenadas
+    }
+
+    const lat = parseFloat(coordsMatch[0].replace(',', '.'));
+    const lng = parseFloat(coordsMatch[1].replace(',', '.'));
+
+    if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      bad++;
+      return;
+    }
+
     n++;
     const id = stamp + '_' + n;
-    const p = { id, n, code: String(r[ci] || '---'), lat, lng, tec: t ? t.email : '', tecNome: t ? t.nome : '' };
+    const codigoPoste = String(r[ci] || '---').trim();
+
+    const p = { 
+      id, 
+      n, 
+      code: codigoPoste, 
+      lat, 
+      lng, 
+      tec: t ? t.email : '', 
+      tecNome: t ? t.nome : '' 
+    };
+    
     up['adm/postes/' + id] = p;
     if (t) up['adm/fila/' + tk + '/' + id] = p;
   });
 
   await fdb.ref().update(up);
-  $('xm').textContent = n + ' postes importados com sucesso!';
+  $('xm').textContent = `${n} postes importados com sucesso! (${bad} linhas gerais ignoradas).`;
   $('map2').style.display = 'none';
   window.fitInitial = false;
 };
