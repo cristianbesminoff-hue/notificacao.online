@@ -26,10 +26,10 @@
   button.sec{background:#e5e7eb;color:#111}
   button.green{background:#16a34a}
   button.warn{background:#f59e0b;color:#fff}
+  button.danger{background:#dc2626;color:#fff}
   label{font-size:12px;font-weight:bold;color:#444;display:block;margin-top:8px}
   .row{display:flex;gap:6px;margin-top:6px}
   
-  /* Pins e Destaque de Seleção */
   .pin{color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .1s}
   .pin-red{background:#dc2626}
   .pin-green{background:#16a34a}
@@ -37,6 +37,7 @@
   .pin.selected{border:3px solid #facc15;box-shadow:0 0 0 3px #1d6fe8;transform:scale(1.25);z-index:999!important}
   
   .box-sel{background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px;margin-top:10px}
+  .box-danger{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -108,6 +109,13 @@
   </select>
   
   <button class="green" id="dl" style="margin-top:8px">📦 Baixar Fotos (ZIP)</button>
+
+  <!-- ZONA DE PERIGO: ZERAR MAPA / EXCLUIR -->
+  <div class="box-danger">
+    <label style="color:#991b1b">⚠️ Zona de Perigo</label>
+    <button class="danger" id="btnZerar" style="margin-top:6px">🗑️ Zerar Mapa / Excluir Zona</button>
+  </div>
+
   <p id="st" style="font-size:12px;color:#555;margin:6px 0 0"></p>
 </div>
 
@@ -157,6 +165,47 @@ function carregarSelectsTecnicos() {
 }
 
 // ==========================================
+// ZERAR MAPA / EXCLUIR COM SENHA
+// ==========================================
+$('btnZerar').onclick = async () => {
+  const senhaDigitada = prompt("⚠️ ATENÇÃO: Isso vai apagar TODOS os postes, filas e fotos da base de dados.\n\nPara confirmar, digite a sua senha de Administrador:");
+  if (!senhaDigitada) return;
+
+  const user = au.currentUser;
+  if (!user || !user.email) {
+    alert("Erro: Sessão inválida.");
+    return;
+  }
+
+  $('st').textContent = 'Verificando senha e limpando banco...';
+
+  try {
+    // Tenta reautenticar o admin com a senha digitada para garantir que é ele mesmo
+    const credential = firebase.auth.EmailAuthProvider.credential(user.email, senhaDigitada);
+    await user.reauthenticateWithCredential(credential);
+
+    // Se a senha estiver correta, apaga os nós do Realtime Database
+    const updates = {};
+    updates['adm/postes'] = null;
+    updates['adm/fila'] = null;
+    updates['adm/fotos_meta'] = null;
+    updates['adm/fotos_data'] = null;
+    updates['adm/concluidos'] = null;
+
+    await fdb.ref().update(updates);
+    
+    selectedIds.clear();
+    atualizarUI_Selecao();
+    $('st').textContent = 'Banco de dados limpo com sucesso! Mapa zerado.';
+    alert('Zona excluída e mapa zerado com sucesso.');
+  } catch (err) {
+    $('st').textContent = 'Erro ao apagar.';
+    alert('Senha incorreta ou erro de autenticação! A operação foi cancelada.');
+    console.error(err);
+  }
+};
+
+// ==========================================
 // LÓGICA DE SELEÇÃO POR RETÂNGULO (ARRASTE)
 // ==========================================
 let startLatLng = null;
@@ -197,7 +246,6 @@ map.on('mouseup', (e) => {
   if (!selectMode || !startLatLng || !selectionRect) return;
   const bounds = L.latLngBounds(startLatLng, e.latlng);
   
-  // Verifica quais postes estão dentro do retângulo desenhado
   Object.entries(po).forEach(([id, p]) => {
     if (markers[id] && bounds.contains([p.lat, p.lng])) {
       selectedIds.add(id);
@@ -227,7 +275,6 @@ $('btnClearSel').onclick = () => {
   atualizarMapa();
 };
 
-// Função central para atribuir N postes a um técnico
 async function atribuirPostes(idsArray, tecKey) {
   const t = tecKey ? tecs[tecKey] : null;
   const up = {};
@@ -236,17 +283,14 @@ async function atribuirPostes(idsArray, tecKey) {
     const p = po[id];
     if (!p) return;
     
-    // Remove da fila do técnico antigo se houver
     if (p.tec) {
       const oldKey = p.tec.replace(/\./g, ',');
       up[`adm/fila/${oldKey}/${id}`] = null;
     }
 
-    // Atualiza o cadastro principal do poste
     up[`adm/postes/${id}/tec`] = t ? t.email : '';
     up[`adm/postes/${id}/tecNome`] = t ? t.nome : '';
 
-    // Adiciona na fila do novo técnico (se não estiver concluído)
     if (t && !cc[id]) {
       up[`adm/fila/${tecKey}/${id}`] = {
         id: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng
@@ -264,13 +308,11 @@ $('btnAssignSel').onclick = async () => {
   $('st').textContent = `${selectedIds.size} poste(s) atualizado(s) com sucesso!`;
   selectedIds.clear();
   atualizarUI_Selecao();
-  
-  // Sai do modo seleção automaticamente após atribuir
   if (selectMode) $('btnSelectMode').click();
 };
 
 // ==========================================
-// RENDERIZAÇÃO DO MAPA E POPUP INDIVIDUAL
+// RENDERIZAÇÃO DO MAPA
 // ==========================================
 function atualizarMapa() {
   Object.values(markers).forEach(m => map.removeLayer(m));
@@ -293,7 +335,6 @@ function atualizarMapa() {
     const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [26,26], iconAnchor: [13,13] });
     const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
     
-    // Clique no marcador: se estiver no modo seleção, alterna seleção; senão abre popup
     m.on('click', (e) => {
       if (selectMode) {
         L.DomEvent.stopPropagation(e);
@@ -304,7 +345,6 @@ function atualizarMapa() {
       }
     });
 
-    // Conteúdo do Popup com atribuição individual rápida
     const popDiv = document.createElement('div');
     popDiv.style.minWidth = '180px';
     popDiv.innerHTML = `<b>Poste: ${p.code}</b><br><small>Atual: ${p.tecNome || 'Sem técnico'}</small>`;
@@ -391,7 +431,7 @@ $('imp').onclick = async () => {
   await fdb.ref().update(up);
   $('xm').textContent = n + ' postes importados com sucesso!';
   $('map2').style.display = 'none';
-  window.fitInitial = false; // Permite reajustar o zoom para os novos pontos
+  window.fitInitial = false;
 };
 
 // Download ZIP
