@@ -33,7 +33,6 @@
   .pin{color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .1s}
   .pin-red{background:#dc2626}
   .pin-green{background:#16a34a}
-  .pin-gray{background:#9ca3af}
   .pin.selected{border:3px solid #facc15;box-shadow:0 0 0 3px #1d6fe8;transform:scale(1.25);z-index:999!important}
   
   .box-sel{background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px;margin-top:10px}
@@ -60,7 +59,6 @@
     <button class="sec" id="out" style="width:auto;padding:4px 8px;font-size:12px">Sair</button>
   </div>
 
-  <!-- Ferramenta de Seleção por Arraste -->
   <div class="box-sel">
     <button id="btnSelectMode">🖱️ Selecionar Área no Mapa</button>
     <div id="selActions" style="display:none;margin-top:8px">
@@ -103,13 +101,9 @@
     <option value="">Todos os Status</option>
     <option value="unassigned">⚠️ Sem técnico atribuído</option>
     <option value="red">🔴 Pendentes (com técnico)</option>
-    <option value="green">🟢 Executados (foto enviada)</option>
-    <option value="gray">⚪ Concluídos</option>
+    <option value="green">🟢 Executados (com foto)</option>
   </select>
-  
-  <button class="green" id="dl" style="margin-top:8px">📦 Baixar Fotos (ZIP)</button>
 
-  <!-- ZONA DE PERIGO: ZERAR MAPA / EXCLUIR -->
   <div class="box-danger">
     <label style="color:#991b1b">⚠️ Zona de Perigo</label>
     <button class="danger" id="btnZerar" style="margin-top:6px">🗑️ Zerar Mapa / Excluir Zona</button>
@@ -123,7 +117,7 @@ firebase.initializeApp(firebaseConfig);
 const fdb = firebase.database(), au = firebase.auth();
 const $ = id => document.getElementById(id);
 
-let po = {}, meta = {}, cc = {}, tecs = {}, markers = {};
+let po = {}, meta = {}, tecs = {}, markers = {};
 let selectedIds = new Set();
 let selectMode = false;
 
@@ -131,7 +125,6 @@ const map = L.map('map', { zoomControl: false }).setView([-14.2, -51.9], 4);
 L.control.zoom({ position: 'topright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-// Autenticação
 $('go').onclick = () => au.signInWithEmailAndPassword($('em').value.trim(), $('pw').value)
   .catch(e => { $('err').textContent = 'Erro ao entrar: ' + e.message; });
 $('out').onclick = () => au.signOut().then(() => location.reload());
@@ -143,7 +136,6 @@ au.onAuthStateChanged(u => {
   
   fdb.ref('adm/postes').on('value', s => { po = s.val() || {}; atualizarMapa(); });
   fdb.ref('adm/fotos_meta').on('value', s => { meta = s.val() || {}; atualizarMapa(); });
-  fdb.ref('adm/concluidos').on('value', s => { cc = s.val() || {}; atualizarMapa(); });
   fdb.ref('adm/tecnicos').on('value', s => { tecs = s.val() || {}; carregarSelectsTecnicos(); atualizarMapa(); });
 });
 
@@ -163,65 +155,42 @@ function carregarSelectsTecnicos() {
   });
 }
 
-// ==========================================
-// ZERAR MAPA / EXCLUIR COM SENHA
-// ==========================================
+// Botão Zerar Banco com Senha
 $('btnZerar').onclick = async () => {
-  const senhaDigitada = prompt("⚠️ ATENÇÃO: Isso vai apagar TODOS os postes, filas e fotos da base de dados.\n\nPara confirmar, digite a sua senha de Administrador:");
+  const senhaDigitada = prompt("⚠️ ATENÇÃO: Isso vai apagar TODOS os postes e fotos da base de dados.\n\nPara confirmar, digite a sua senha de Administrador:");
   if (!senhaDigitada) return;
 
   const user = au.currentUser;
-  if (!user || !user.email) {
-    alert("Erro: Sessão inválida.");
-    return;
-  }
-
-  $('st').textContent = 'Verificando senha e limpando banco...';
-
   try {
     const credential = firebase.auth.EmailAuthProvider.credential(user.email, senhaDigitada);
     await user.reauthenticateWithCredential(credential);
 
-    const updates = {};
-    updates['adm/postes'] = null;
-    updates['adm/fila'] = null;
-    updates['adm/fotos_meta'] = null;
-    updates['adm/fotos_data'] = null;
-    updates['adm/concluidos'] = null;
-
-    await fdb.ref().update(updates);
+    await fdb.ref().update({
+      'adm/postes': null,
+      'adm/fila': null,
+      'adm/fotos_meta': null,
+      'adm/fotos_data': null
+    });
     
     selectedIds.clear();
     atualizarUI_Selecao();
-    $('st').textContent = 'Banco de dados limpo com sucesso! Mapa zerado.';
-    alert('Zona excluída e mapa zerado com sucesso.');
+    alert('Mapa zerado com sucesso.');
   } catch (err) {
-    $('st').textContent = 'Erro ao apagar.';
-    alert('Senha incorreta ou erro de autenticação! A operação foi cancelada.');
-    console.error(err);
+    alert('Senha incorreta ou erro!');
   }
 };
 
-// ==========================================
-// LÓGICA DE SELEÇÃO POR RETÂNGULO (ARRASTE)
-// ==========================================
-let startLatLng = null;
-let selectionRect = null;
-
+// Seleção por Retângulo
+let startLatLng = null, selectionRect = null;
 $('btnSelectMode').onclick = () => {
   selectMode = !selectMode;
   const btn = $('btnSelectMode');
-  const mapEl = $('map');
   if (selectMode) {
-    btn.textContent = '❌ Sair do Modo Seleção';
-    btn.className = 'warn';
-    mapEl.classList.add('selecting');
-    map.dragging.disable();
+    btn.textContent = '❌ Sair do Modo Seleção'; btn.className = 'warn';
+    $('map').classList.add('selecting'); map.dragging.disable();
   } else {
-    btn.textContent = '🖱️ Selecionar Área no Mapa';
-    btn.className = '';
-    mapEl.classList.remove('selecting');
-    map.dragging.enable();
+    btn.textContent = '🖱️ Selecionar Área no Mapa'; btn.className = '';
+    $('map').classList.remove('selecting'); map.dragging.enable();
   }
 };
 
@@ -229,9 +198,7 @@ map.on('mousedown', (e) => {
   if (!selectMode) return;
   startLatLng = e.latlng;
   if (selectionRect) map.removeLayer(selectionRect);
-  selectionRect = L.rectangle([startLatLng, startLatLng], {
-    color: '#1d6fe8', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.2
-  }).addTo(map);
+  selectionRect = L.rectangle([startLatLng, startLatLng], { color: '#1d6fe8', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.2 }).addTo(map);
 });
 
 map.on('mousemove', (e) => {
@@ -242,18 +209,11 @@ map.on('mousemove', (e) => {
 map.on('mouseup', (e) => {
   if (!selectMode || !startLatLng || !selectionRect) return;
   const bounds = L.latLngBounds(startLatLng, e.latlng);
-  
   Object.entries(po).forEach(([id, p]) => {
-    if (markers[id] && bounds.contains([p.lat, p.lng])) {
-      selectedIds.add(id);
-    }
+    if (markers[id] && bounds.contains([p.lat, p.lng])) selectedIds.add(id);
   });
-
-  map.removeLayer(selectionRect);
-  selectionRect = null;
-  startLatLng = null;
-  atualizarUI_Selecao();
-  atualizarMapa();
+  map.removeLayer(selectionRect); selectionRect = null; startLatLng = null;
+  atualizarUI_Selecao(); atualizarMapa();
 });
 
 function atualizarUI_Selecao() {
@@ -261,55 +221,33 @@ function atualizarUI_Selecao() {
   if (selectedIds.size > 0) {
     box.style.display = 'block';
     $('selCount').textContent = `${selectedIds.size} poste(s) selecionado(s)`;
-  } else {
-    box.style.display = 'none';
-  }
+  } else { box.style.display = 'none'; }
 }
 
-$('btnClearSel').onclick = () => {
-  selectedIds.clear();
-  atualizarUI_Selecao();
-  atualizarMapa();
-};
+$('btnClearSel').onclick = () => { selectedIds.clear(); atualizarUI_Selecao(); atualizarMapa(); };
 
 async function atribuirPostes(idsArray, tecKey) {
   const t = tecKey ? tecs[tecKey] : null;
   const up = {};
-
   idsArray.forEach(id => {
-    const p = po[id];
-    if (!p) return;
-    
-    if (p.tec) {
-      const oldKey = p.tec.replace(/\./g, ',');
-      up[`adm/fila/${oldKey}/${id}`] = null;
-    }
-
+    const p = po[id]; if (!p) return;
+    if (p.tec) up[`adm/fila/${p.tec.replace(/\./g, ',')}/${id}`] = null;
     up[`adm/postes/${id}/tec`] = t ? t.email : '';
     up[`adm/postes/${id}/tecNome`] = t ? t.nome : '';
-
-    if (t && !cc[id]) {
-      up[`adm/fila/${tecKey}/${id}`] = {
-        id: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng
-      };
-    }
+    if (t) up[`adm/fila/${tecKey}/${id}`] = { id: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng };
   });
-
   await fdb.ref().update(up);
 }
 
 $('btnAssignSel').onclick = async () => {
   if (selectedIds.size === 0) return;
-  const tecKey = $('selTech').value;
-  await atribuirPostes([...selectedIds], tecKey);
-  $('st').textContent = `${selectedIds.size} poste(s) atualizado(s) com sucesso!`;
-  selectedIds.clear();
-  atualizarUI_Selecao();
+  await atribuirPostes([...selectedIds], $('selTech').value);
+  selectedIds.clear(); atualizarUI_Selecao();
   if (selectMode) $('btnSelectMode').click();
 };
 
 // ==========================================
-// RENDERIZAÇÃO DO MAPA
+// RENDERIZAÇÃO DOS PINS NO MAPA DO ADMIN
 // ==========================================
 function atualizarMapa() {
   Object.values(markers).forEach(m => map.removeLayer(m));
@@ -319,9 +257,10 @@ function atualizarMapa() {
   let coords = [];
 
   Object.entries(po).forEach(([id, p]) => {
-    const temFoto = Object.values(meta).some(m => m.pid === id);
-    const concluido = cc[id];
-    let estado = concluido ? 'gray' : (temFoto ? 'green' : 'red');
+    // Procura se existe foto enviada para este poste
+    const fotoEntry = Object.entries(meta).find(([k, m]) => m.pid === id);
+    const temFoto = !!fotoEntry;
+    let estado = temFoto ? 'green' : 'red';
 
     if (filtro === 'unassigned' && p.tec) return;
     if (filtro && filtro !== 'unassigned' && estado !== filtro) return;
@@ -337,37 +276,80 @@ function atualizarMapa() {
         L.DomEvent.stopPropagation(e);
         if (selectedIds.has(id)) selectedIds.delete(id);
         else selectedIds.add(id);
-        atualizarUI_Selecao();
-        atualizarMapa();
+        atualizarUI_Selecao(); atualizarMapa();
       }
     });
 
+    // Popup do Poste
     const popDiv = document.createElement('div');
-    popDiv.style.minWidth = '180px';
-    popDiv.innerHTML = `<b>Poste: ${p.code}</b><br><small>Atual: ${p.tecNome || 'Sem técnico'}</small>`;
-    
-    const selInd = document.createElement('select');
-    selInd.style.marginTop = '6px';
-    selInd.innerHTML = '<option value="">— sem técnico —</option>';
-    Object.entries(tecs).forEach(([k, t]) => {
-      const opt = new Option(t.nome, k);
-      if (p.tec === t.email) opt.selected = true;
-      selInd.appendChild(opt);
-    });
-    
-    const btnSalvarInd = document.createElement('button');
-    btnSalvarInd.textContent = 'Salvar Técnico';
-    btnSalvarInd.style.marginTop = '6px';
-    btnSalvarInd.style.padding = '5px';
-    btnSalvarInd.onclick = async () => {
-      await atribuirPostes([id], selInd.value);
-      map.closePopup();
-    };
+    popDiv.style.minWidth = '200px';
+    popDiv.innerHTML = `<b>Poste: ${p.code}</b><br><small>Técnico: ${p.tecNome || 'Nenhum'}</small><br>`;
 
-    popDiv.appendChild(selInd);
-    popDiv.appendChild(btnSalvarInd);
+    if (temFoto) {
+      const [fotoKey, fotoMeta] = fotoEntry;
+      popDiv.innerHTML += `<div style="margin-top:4px;color:#16a34a;font-weight:bold">🟢 Foto Recebida!</div>`;
+      popDiv.innerHTML += `<small>📍 Rua: ${fotoMeta.rua || 'Não informada'}</small><br>`;
+      
+      const imgThumb = document.createElement('img');
+      imgThumb.style.cssText = 'width:100%;height:120px;object-fit:cover;border-radius:4px;margin-top:6px;background:#eee';
+      popDiv.appendChild(imgThumb);
+
+      // Carrega a imagem em Base64
+      fdb.ref('adm/fotos_data/' + fotoKey + '/img').once('value').then(s => {
+        if (s.val()) imgThumb.src = s.val();
+      });
+
+      // Botão para Baixar e Excluir do Banco
+      const btnBaixarEApagar = document.createElement('button');
+      btnBaixarEApagar.textContent = '📥 Baixar Foto e Concluir';
+      btnBaixarEApagar.style.cssText = 'background:#16a34a;margin-top:8px;padding:6px';
+      btnBaixarEApagar.onclick = async () => {
+        const imgData = (await fdb.ref('adm/fotos_data/' + fotoKey + '/img').once('value')).val();
+        if (!imgData) { alert('Erro ao buscar foto.'); return; }
+
+        // Faz o download automático
+        const a = document.createElement('a');
+        a.href = imgData;
+        a.download = `POSTE-${p.code}.jpg`;
+        document.body.appendChild(a); a.click(); a.remove();
+
+        // Remove do banco de dados (libera o poste)
+        const updates = {};
+        updates[`adm/postes/${id}`] = null;
+        updates[`adm/fotos_meta/${fotoKey}`] = null;
+        updates[`adm/fotos_data/${fotoKey}`] = null;
+        if (p.tec) {
+          updates[`adm/fila/${p.tec.replace(/\./g, ',')}/${id}`] = null;
+        }
+        await fdb.ref().update(updates);
+        map.closePopup();
+      };
+      popDiv.appendChild(btnBaixarEApagar);
+
+    } else {
+      // Se não tem foto, permite alterar técnico individualmente
+      const selInd = document.createElement('select');
+      selInd.style.marginTop = '6px';
+      selInd.innerHTML = '<option value="">— sem técnico —</option>';
+      Object.entries(tecs).forEach(([k, t]) => {
+        const opt = new Option(t.nome, k);
+        if (p.tec === t.email) opt.selected = true;
+        selInd.appendChild(opt);
+      });
+      
+      const btnSalvarInd = document.createElement('button');
+      btnSalvarInd.textContent = 'Salvar Técnico';
+      btnSalvarInd.style.marginTop = '6px';
+      btnSalvarInd.style.padding = '5px';
+      btnSalvarInd.onclick = async () => {
+        await atribuirPostes([id], selInd.value);
+        map.closePopup();
+      };
+      popDiv.appendChild(selInd);
+      popDiv.appendChild(btnSalvarInd);
+    }
+
     m.bindPopup(popDiv);
-
     markers[id] = m;
     coords.push([p.lat, p.lng]);
   });
@@ -383,103 +365,62 @@ $('fe').onchange = atualizarMapa;
 // Cadastro de Técnico
 $('addt').onclick = async () => {
   const nome = $('tn').value.trim(), em = $('te').value.trim().toLowerCase(), sn = $('ts').value;
-  const m = $('tm');
-  if (!nome || !em || sn.length < 6) { m.textContent = 'Preencha nome, e-mail e senha (mín. 6)'; return; }
+  if (!nome || !em || sn.length < 6) { $('tm').textContent = 'Preencha dados válidos'; return; }
   try {
     const app2 = firebase.apps.find(a => a.name === 'sec') || firebase.initializeApp(firebaseConfig, 'sec');
     try { await app2.auth().createUserWithEmailAndPassword(em, sn); } catch(e){}
     await app2.auth().signOut();
     await fdb.ref('adm/tecnicos/' + em.replace(/\./g, ',')).set({ nome, email: em });
-    m.style.color = '#16a34a'; m.textContent = 'Técnico cadastrado com sucesso!';
+    $('tm').style.color = '#16a34a'; $('tm').textContent = 'Cadastrado!';
     $('tn').value = $('te').value = $('ts').value = '';
-  } catch(e) { m.style.color = '#b00'; m.textContent = 'Erro ao cadastrar.'; }
+  } catch(e) { $('tm').style.color = '#b00'; $('tm').textContent = 'Erro ao cadastrar.'; }
 };
 
-// Importação Excel (Lendo 'Local' e 'Localização')
+// Importação Excel
 $('xf').onchange = async (e) => {
-  const f = e.target.files[0], m = $('xm'); if (!f) return;
+  const f = e.target.files[0]; if (!f) return;
   const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
   const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }).filter(r => r.some(c => c !== ''));
   const h = linhas[0] || [];
   
   const fill = (id) => { const s = $(id); s.innerHTML = ''; h.forEach((x, i) => s.appendChild(new Option(x, i))); };
-  fill('mc'); // Coluna Local
-  fill('mo'); // Coluna Localização
-
-  // Auto-seleciona se encontrar os nomes padrão
+  fill('mc'); fill('mo');
   h.forEach((x, i) => {
-    const nomeCol = String(x).trim().toLowerCase();
-    if (nomeCol === 'local') $('mc').value = i;
-    if (nomeCol === 'localização' || nomeCol === 'localizacao') $('mo').value = i;
+    const c = String(x).trim().toLowerCase();
+    if (c === 'local') $('mc').value = i;
+    if (c === 'localização' || c === 'localizacao') $('mo').value = i;
   });
 
   $('map2').style.display = 'block';
   window.excelLinhas = linhas.slice(1);
-  m.textContent = window.excelLinhas.length + ' linhas encontradas na planilha.';
+  $('xm').textContent = window.excelLinhas.length + ' linhas encontradas.';
 };
 
 $('imp').onclick = async () => {
-  const ci = +$('mc').value;     // Coluna Local (Poste)
-  const loCol = +$('mo').value; // Coluna Localização (Coordenadas)
+  const ci = +$('mc').value, loCol = +$('mo').value;
   const tk = $('mt').value, t = tk ? tecs[tk] : null;
-  const up = {}, stamp = Date.now(); let n = 0, bad = 0;
+  const up = {}, stamp = Date.now(); let n = 0;
 
   window.excelLinhas.forEach(r => {
     const locStr = String(r[loCol] || '').trim();
     const coordsMatch = locStr.match(/-?\d+(?:[.,]\d+)?/g);
-    
-    if (!coordsMatch || coordsMatch.length < 2) {
-      bad++;
-      return; // Ignora linhas gerais (cidade/bairro) sem coordenadas
-    }
+    if (!coordsMatch || coordsMatch.length < 2) return;
 
     const lat = parseFloat(coordsMatch[0].replace(',', '.'));
     const lng = parseFloat(coordsMatch[1].replace(',', '.'));
-
-    if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-      bad++;
-      return;
-    }
+    if (isNaN(lat) || isNaN(lng)) return;
 
     n++;
     const id = stamp + '_' + n;
-    const codigoPoste = String(r[ci] || '---').trim();
-
-    const p = { 
-      id, 
-      n, 
-      code: codigoPoste, 
-      lat, 
-      lng, 
-      tec: t ? t.email : '', 
-      tecNome: t ? t.nome : '' 
-    };
-    
+    const p = { id, n, code: String(r[ci] || '---').trim(), lat, lng, tec: t ? t.email : '', tecNome: t ? t.nome : '' };
     up['adm/postes/' + id] = p;
     if (t) up['adm/fila/' + tk + '/' + id] = p;
   });
 
   await fdb.ref().update(up);
-  $('xm').textContent = `${n} postes importados com sucesso! (${bad} linhas gerais ignoradas).`;
+  $('xm').textContent = `${n} postes importados!`;
   $('map2').style.display = 'none';
   window.fitInitial = false;
-};
-
-// Download ZIP
-$('dl').onclick = async () => {
-  const zip = new JSZip();
-  let count = 0;
-  for(const [k, m] of Object.entries(meta)) {
-    const imgData = (await fdb.ref('adm/fotos_data/' + k + '/img').once('value')).val();
-    if(imgData) {
-      zip.file(`poste_${m.code}_${count+1}.jpg`, imgData.split(',')[1], {base64: true});
-      count++;
-    }
-  }
-  if(count === 0) { alert('Nenhuma foto encontrada para baixar.'); return; }
-  const content = await zip.generateAsync({type:'blob'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = 'fotos_postes.zip';
-  a.click();
 };
 </script>
 </body>
