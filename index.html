@@ -23,7 +23,6 @@
   .row{display:flex;gap:6px;align-items:center}
   
   .pin-red{background:#dc2626;color:#fff;border:2px solid #fff;border-radius:50%;width:32px;height:32px;line-height:28px;text-align:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
-  .pin-green{background:#16a34a;color:#fff;border:2px solid #fff;border-radius:50%;width:32px;height:32px;line-height:28px;text-align:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
   .pin-me{background:#2563eb;color:#fff;border:2px solid #fff;border-radius:50%;width:20px;height:20px;line-height:16px;text-align:center;font-size:10px;box-shadow:0 0 8px #2563eb}
   
   .pop{text-align:center}
@@ -66,7 +65,6 @@ const map = L.map('map', { zoomControl: false }).setView([-14.2, -51.9], 4);
 L.control.zoom({ position: 'topright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-// Acompanha a geolocalização do técnico em tempo real
 map.locate({ watch: true, enableHighAccuracy: true });
 map.on('locationfound', e => {
   lastPos = e.latlng;
@@ -106,26 +104,20 @@ function carregarPontosTecnico(email) {
 
     let coords = [];
     Object.values(pontos).forEach(p => {
-      fdb.ref('adm/fotos_meta').orderByChild('pid').equalTo(p.id).once('value').then(metaSnap => {
-        const temFoto = metaSnap.exists();
-        let pinClass = temFoto ? 'pin-green' : 'pin-red';
-
-        const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [32,32], iconAnchor: [16,16] });
-        const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
-        
-        const box = document.createElement('div');
-        box.className = 'pop';
-        box.innerHTML = `<div>Poste</div><div class="cod">${p.code}</div>`;
-        
-        const btn = document.createElement('button');
-        btn.textContent = temFoto ? '📷 Alterar Foto' : '📷 Tirar Foto & Executar';
-        btn.onclick = () => { currentPt = p; $('cam').click(); };
-        box.appendChild(btn);
-        
-        m.bindPopup(box);
-        markers[p.id] = m;
-      });
-
+      const icon = L.divIcon({ className: '', html: `<div class="pin-red">${p.n || '📍'}</div>`, iconSize: [32,32], iconAnchor: [16,16] });
+      const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
+      
+      const box = document.createElement('div');
+      box.className = 'pop';
+      box.innerHTML = `<div>Poste</div><div class="cod">${p.code}</div>`;
+      
+      const btn = document.createElement('button');
+      btn.textContent = '📷 Tirar Foto & Executar';
+      btn.onclick = () => { currentPt = p; $('cam').click(); };
+      box.appendChild(btn);
+      
+      m.bindPopup(box);
+      markers[p.id] = m;
       coords.push([p.lat, p.lng]);
     });
 
@@ -133,7 +125,6 @@ function carregarPontosTecnico(email) {
   });
 }
 
-// Descobre o nome da rua via API OpenStreetMap
 async function obterNomeRua(lat, lng) {
   try {
     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
@@ -145,7 +136,6 @@ async function obterNomeRua(lat, lng) {
   return 'GPS Ativo';
 }
 
-// Função para desenhar as informações direto na imagem (Carimbo)
 function carimbarImagem(file, dados) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -157,10 +147,8 @@ function carimbarImagem(file, dados) {
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
         
-        // Desenha a foto original
         ctx.drawImage(img, 0, 0);
 
-        // Configurações do fundo preto semi-transparente para o texto
         const fontSize = Math.max(20, Math.floor(canvas.width * 0.035));
         ctx.font = `bold ${fontSize}px sans-serif`;
         const padding = 15;
@@ -176,11 +164,9 @@ function carimbarImagem(file, dados) {
         const boxHeight = (linhas.length * lineHeight) + (padding * 2);
         const boxWidth = canvas.width;
 
-        // Fundo preto no topo da foto
         ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
         ctx.fillRect(0, 0, boxWidth, boxHeight);
 
-        // Escreve os textos em branco
         ctx.fillStyle = '#ffffff';
         let y = padding + fontSize;
         linhas.forEach(texto => {
@@ -196,7 +182,6 @@ function carimbarImagem(file, dados) {
   });
 }
 
-// Captura Foto, Pega Localização, Carimba e Envia
 $('cam').onchange = async (e) => {
   const file = e.target.files[0];
   const p = currentPt;
@@ -223,6 +208,7 @@ $('cam').onchange = async (e) => {
   const fotoBase64Carimbada = await carimbarImagem(file, dadosCarimbo);
   const fotoId = 'foto_' + Date.now();
   const user = au.currentUser;
+  const tecKey = user.email.replace(/\./g, ',');
 
   try {
     const updates = {};
@@ -235,6 +221,9 @@ $('cam').onchange = async (e) => {
       gps: { lat, lng }
     };
     updates['adm/fotos_data/' + fotoId + '/img'] = fotoBase64Carimbada;
+    
+    // REMOVE O PONTO DA FILA DO TÉCNICO (APAGA DO MAPA DELE)
+    updates['adm/fila/' + tecKey + '/' + p.id] = null;
 
     await fdb.ref().update(updates);
     $('msg').textContent = 'Enviado com sucesso!';
