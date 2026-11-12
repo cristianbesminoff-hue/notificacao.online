@@ -23,11 +23,13 @@
   .row{display:flex;gap:6px;align-items:center}
   
   .pin-red{background:#dc2626;color:#fff;border:2px solid #fff;border-radius:50%;width:32px;height:32px;line-height:28px;text-align:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .pin-blue{background:#2563eb;color:#fff;border:2px solid #fff;border-radius:50%;width:32px;height:32px;line-height:28px;text-align:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
   .pin-me{background:#2563eb;color:#fff;border:2px solid #fff;border-radius:50%;width:20px;height:20px;line-height:16px;text-align:center;font-size:10px;box-shadow:0 0 8px #2563eb}
   
   .pop{text-align:center}
   .pop .cod{font-size:22px;font-weight:700;margin:4px 0 8px}
   .pop button{background:#1a9b4b;width:100%;padding:10px}
+  .pop button.blue{background:#2563eb;margin-top:6px}
 </style>
 </head>
 <body>
@@ -45,6 +47,15 @@
 <div id="map"></div>
 
 <div id="panel">
+  <!-- Caixa de Busca de Poste -->
+  <div style="background:#f8fafc;padding:8px;border-radius:8px;margin-bottom:8px;border:1px solid #e2e8f0;">
+    <label style="font-size:12px;font-weight:bold;color:#475569;display:block;margin-bottom:4px;">🔍 Buscar Poste na Fila:</label>
+    <div class="row" style="margin-bottom:0">
+      <input type="text" id="txtBusca" placeholder="Ex: 1456 ou Poste 1441" style="margin-bottom:0">
+      <button id="btnBuscar" style="width:auto;padding:10px 16px;margin-bottom:0">Buscar</button>
+    </div>
+  </div>
+
   <div class="row">
     <button class="sec" id="me" style="background:#e5e7eb;color:#111">📍 Minha Posição</button>
     <button class="sec" id="fit" style="background:#e5e7eb;color:#111">Ver Todos</button>
@@ -60,6 +71,8 @@ const fdb = firebase.database(), au = firebase.auth();
 const $ = id => document.getElementById(id);
 
 let markers = {}, currentPt = null, lastPos = null, meMarker = null;
+let pontosCache = {}; // Armazena os pontos carregados do banco
+let selecionadosIds = new Set(); // IDs dos postes selecionados (azuis)
 
 const map = L.map('map', { zoomControl: false }).setView([-14.2, -51.9], 4);
 L.control.zoom({ position: 'topright' }).addTo(map);
@@ -98,32 +111,95 @@ function carregarPontosTecnico(email) {
   const tecKey = email.replace(/\./g, ',');
   
   fdb.ref('adm/fila/' + tecKey).on('value', snapshot => {
-    const pontos = snapshot.val() || {};
-    Object.values(markers).forEach(m => map.removeLayer(m));
-    markers = {};
-
-    let coords = [];
-    Object.values(pontos).forEach(p => {
-      const icon = L.divIcon({ className: '', html: `<div class="pin-red">${p.n || '📍'}</div>`, iconSize: [32,32], iconAnchor: [16,16] });
-      const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
-      
-      const box = document.createElement('div');
-      box.className = 'pop';
-      box.innerHTML = `<div>Poste</div><div class="cod">${p.code}</div>`;
-      
-      const btn = document.createElement('button');
-      btn.textContent = '📷 Tirar Foto & Executar';
-      btn.onclick = () => { currentPt = p; $('cam').click(); };
-      box.appendChild(btn);
-      
-      m.bindPopup(box);
-      markers[p.id] = m;
-      coords.push([p.lat, p.lng]);
-    });
-
-    if(coords.length > 0) map.fitBounds(coords, { padding: [50, 50], maxZoom: 16 });
+    pontosCache = snapshot.val() || {};
+    desenharMapaPontos();
   });
 }
+
+function desenharMapaPontos() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+
+  let coords = [];
+  Object.values(pontosCache).forEach(p => {
+    const isSelecionado = selecionadosIds.has(p.id);
+    let pinClass = isSelecionado ? 'pin-blue' : 'pin-red';
+
+    const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [32,32], iconAnchor: [16,16] });
+    const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
+    
+    const box = document.createElement('div');
+    box.className = 'pop';
+    box.innerHTML = `<div>Poste</div><div class="cod">${p.code}</div>`;
+    
+    // Botão de Executar / Tirar Foto
+    const btnFoto = document.createElement('button');
+    btnFoto.textContent = '📷 Tirar Foto & Executar';
+    btnFoto.onclick = () => { currentPt = p; $('cam').click(); };
+    box.appendChild(btnFoto);
+
+    // Botão para Adicionar / Remover da Lista de Selecionados
+    const btnLista = document.createElement('button');
+    btnLista.className = 'blue';
+    btnLista.textContent = isSelecionado ? '❌ Remover da Lista' : '➕ Adicionar à Lista';
+    btnLista.onclick = () => {
+      if (isSelecionado) {
+        selecionadosIds.delete(p.id);
+      } else {
+        selecionadosIds.add(p.id);
+        // Pergunta se deseja continuar adicionando outro poste
+        const continuar = confirm(`Poste ${p.code} adicionado à lista!\nDeseja adicionar outro poste?`);
+        if (continuar) {
+          $('txtBusca').value = '';
+          $('txtBusca').focus();
+          map.closePopup();
+          desenharMapaPontos();
+          return;
+        }
+      }
+      desenharMapaPontos();
+      map.closePopup();
+    };
+    box.appendChild(btnLista);
+    
+    m.bindPopup(box);
+    markers[p.id] = m;
+    coords.push([p.lat, p.lng]);
+  });
+
+  if(coords.length > 0 && !window.jaFocouInicial) {
+    map.fitBounds(coords, { padding: [50, 50], maxZoom: 16 });
+    window.jaFocouInicial = true;
+  }
+}
+
+// Lógica do botão Buscar
+$('btnBuscar').onclick = () => {
+  const termo = $('txtBusca').value.trim().toLowerCase();
+  if (!termo) {
+    alert('Digite o código ou número do poste para buscar.');
+    return;
+  }
+
+  // Procura entre os postes não executados (cache)
+  let encontrado = null;
+  for (const [id, p] of Object.entries(pontosCache)) {
+    const codeStr = String(p.code || '').toLowerCase();
+    const numStr = String(p.n || '').toLowerCase();
+    if (codeStr.includes(termo) || numStr.includes(termo)) {
+      encontrado = p;
+      break;
+    }
+  }
+
+  if (encontrado && markers[encontrado.id]) {
+    map.setView([encontrado.lat, encontrado.lng], 18);
+    markers[encontrado.id].openPopup();
+    $('msg').textContent = `Poste ${encontrado.code} encontrado!`;
+  } else {
+    alert('Poste não encontrado na sua fila de pendentes.');
+  }
+};
 
 async function obterNomeRua(lat, lng) {
   try {
@@ -222,8 +298,9 @@ $('cam').onchange = async (e) => {
     };
     updates['adm/fotos_data/' + fotoId + '/img'] = fotoBase64Carimbada;
     
-    // REMOVE O PONTO DA FILA DO TÉCNICO (APAGA DO MAPA DELE)
+    // Remove o ponto da fila do técnico e da lista de selecionados
     updates['adm/fila/' + tecKey + '/' + p.id] = null;
+    selecionadosIds.delete(p.id);
 
     await fdb.ref().update(updates);
     $('msg').textContent = 'Enviado com sucesso!';
