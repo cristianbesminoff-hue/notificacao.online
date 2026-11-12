@@ -108,7 +108,8 @@
   <!-- RODAPÉ DE RELATÓRIOS -->
   <div class="box-report">
     <label style="color:#166534">📊 Relatórios</label>
-    <button class="green" id="btnRelatorioOk" style="margin-top:6px">📄 Baixar Relatório OK (Concluídos)</button>
+    <button class="green" id="btnRelatorioOk" style="margin-top:6px">📄 Baixar Relatório OK (CSV)</button>
+    <button class="green" id="btnPdf" style="margin-top:6px">🖨️ Gerar Relatório PDF</button>
   </div>
 
   <div class="box-danger">
@@ -163,9 +164,7 @@ function carregarSelectsTecnicos() {
   });
 }
 
-// ==========================================
-// RELATÓRIO DE OK (CONCLUÍDOS)
-// ==========================================
+// Relatório CSV (Concluídos)
 $('btnRelatorioOk').onclick = () => {
   const registros = Object.values(concluidosLog);
   if (registros.length === 0) {
@@ -173,10 +172,9 @@ $('btnRelatorioOk').onclick = () => {
     return;
   }
 
-  // Cria o conteúdo do CSV (Separado por ponto e vírgula para abrir perfeitamente no Excel)
   let csvContent = "\uFEFFNumero_Poste;Data_Horario_Download\n";
   registros.forEach(item => {
-    csvContent += `"${item.code}";"${item.dataHora}\n`;
+    csvContent += `"${item.code}";"${item.dataHora}"\n`;
   });
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -187,6 +185,80 @@ $('btnRelatorioOk').onclick = () => {
   document.body.appendChild(a);
   a.click();
   a.remove();
+};
+
+// Relatório em PDF
+$('btnPdf').onclick = async () => {
+  const snapshots = await Promise.all([
+    fdb.ref('adm/fotos_meta').once('value'),
+    fdb.ref('adm/postes').once('value')
+  ]);
+  
+  const metas = snapshots[0].val() || {};
+  const listaExecucoes = Object.values(metas);
+
+  if (listaExecucoes.length === 0) {
+    alert("Nenhuma execução com foto encontrada para gerar o relatório.");
+    return;
+  }
+
+  const janelaPrint = window.open('', '_blank');
+  let htmlConteudo = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8">
+      <title>Relatório de Execução de Postes</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; color: #111; }
+        h2 { text-align: center; color: #1d6fe8; margin-bottom: 5px; }
+        p.sub { text-align: center; font-size: 13px; color: #555; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; font-size: 13px; text-align: left; }
+        th { background-color: #f3f4f6; color: #333; }
+        tr:nth-child(even) { background-color: #f9fafb; }
+        .footer { margin-top: 30px; text-align: right; font-size: 12px; color: #777; }
+        @media print { button { display: none; } }
+      </style>
+    </head>
+    <body>
+      <h2>Relatório de Execução de Postes em Campo</h2>
+      <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Nº do Poste</th>
+            <th>Login do Técnico</th>
+            <th>Endereço / Rua</th>
+            <th>Data e Horário da Foto</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  listaExecucoes.forEach(item => {
+    const dataFormatada = item.time ? new Date(item.time).toLocaleString('pt-BR') : 'Data não informada';
+    htmlConteudo += `
+      <tr>
+        <td><b>${item.code || '---'}</b></td>
+        <td>${item.tec || 'Não identificado'}</td>
+        <td>${item.rua || 'Localização via GPS'}</td>
+        <td>${dataFormatada}</td>
+      </tr>
+    `;
+  });
+
+  htmlConteudo += `
+        </tbody>
+      </table>
+      <div class="footer"><p>Sistema de Gestão de Rotas e Fotos · Total de registros: ${listaExecucoes.length}</p></div>
+      <script>window.onload = function() { window.print(); }</script>
+    </body>
+    </html>
+  `;
+
+  janelaPrint.document.write(htmlConteudo);
+  janelaPrint.document.close();
 };
 
 // Botão Zerar Banco com Senha
@@ -266,7 +338,7 @@ async function atribuirPostes(idsArray, tecKey) {
   const up = {};
   idsArray.forEach(id => {
     const p = po[id]; if (!p) return;
-    if (p.tec) up[`adm/fila/${p.tec.replace(/\./g,  ',')}/${id}`] = null;
+    if (p.tec) up[`adm/fila/${p.tec.replace(/\./g, ',')}/${id}`] = null;
     up[`adm/postes/${id}/tec`] = t ? t.email : '';
     up[`adm/postes/${id}/tecNome`] = t ? t.nome : '';
     if (t) up[`adm/fila/${tecKey}/${id}`] = { id: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng };
@@ -281,9 +353,7 @@ $('btnAssignSel').onclick = async () => {
   if (selectMode) $('btnSelectMode').click();
 };
 
-// ==========================================
-// RENDERIZAÇÃO DOS PINS NO MAPA DO ADMIN
-// ==========================================
+// Renderização dos Pins
 function atualizarMapa() {
   Object.values(markers).forEach(m => map.removeLayer(m));
   markers = {};
@@ -331,7 +401,6 @@ function atualizarMapa() {
         if (s.val()) imgThumb.src = s.val();
       });
 
-      // Botão para Baixar, Salvar no Relatório e Excluir do Banco
       const btnBaixarEApagar = document.createElement('button');
       btnBaixarEApagar.textContent = '📥 Baixar Foto e Concluir';
       btnBaixarEApagar.style.cssText = 'background:#16a34a;margin-top:8px;padding:6px';
@@ -339,7 +408,6 @@ function atualizarMapa() {
         const imgData = (await fdb.ref('adm/fotos_data/' + fotoKey + '/img').once('value')).val();
         if (!imgData) { alert('Erro ao buscar foto.'); return; }
 
-        // Faz o download automático da foto
         const a = document.createElement('a');
         a.href = imgData;
         a.download = `POSTE-${p.code}.jpg`;
@@ -348,20 +416,12 @@ function atualizarMapa() {
         const dataHoraAtual = new Date().toLocaleString('pt-BR');
         const logId = 'log_' + Date.now() + '_' + Math.floor(Math.random()*1000);
 
-        // Salva o registo histórico para o relatório de OK
         const updates = {};
-        updates[`adm/concluidos_log/${logId}`] = {
-          code: p.code,
-          dataHora: dataHoraAtual
-        };
-
-        // Remove o poste ativo e as fotos da base operacional
+        updates[`adm/concluidos_log/${logId}`] = { code: p.code, dataHora: dataHoraAtual };
         updates[`adm/postes/${id}`] = null;
         updates[`adm/fotos_meta/${fotoKey}`] = null;
         updates[`adm/fotos_data/${fotoKey}`] = null;
-        if (p.tec) {
-          updates[`adm/fila/${p.tec.replace(/\./g, ',')}/${id}`] = null;
-        }
+        if (p.tec) updates[`adm/fila/${p.tec.replace(/\./g, ',')}/${id}`] = null;
 
         await fdb.ref().update(updates);
         map.closePopup();
@@ -453,7 +513,7 @@ $('imp').onclick = async () => {
 
     n++;
     const id = stamp + '_' + n;
-    const p = { id, n, code: String(r[ci] || '---').trim(), lat, lng, t: t ? t.email : '', tec: t ? t.email : '', tecNome: t ? t.nome : '' };
+    const p = { id, n, code: String(r[ci] || '---').trim(), lat, lng, tec: t ? t.email : '', tecNome: t ? t.nome : '' };
     up['adm/postes/' + id] = p;
     if (t) up['adm/fila/' + tk + '/' + id] = p;
   });
