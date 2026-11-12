@@ -108,8 +108,17 @@
   <!-- RODAPÉ DE RELATÓRIOS -->
   <div class="box-report">
     <label style="color:#166534">📊 Relatórios</label>
-    <button class="green" id="btnRelatorioOk" style="margin-top:6px">📄 Baixar Relatório OK (CSV)</button>
-    <button class="green" id="btnPdf" style="margin-top:6px">🖨️ Gerar Relatório PDF</button>
+    <label style="color:#166534">📅 Dia</label>
+    <input type="date" id="rDia">
+    <div class="row">
+      <div style="flex:1"><label style="color:#166534">De</label><input type="date" id="rDe"></div>
+      <div style="flex:1"><label style="color:#166534">Até</label><input type="date" id="rAte"></div>
+    </div>
+    <label style="color:#166534">👷 Técnico</label>
+    <select id="rTec"></select>
+    <p style="font-size:11px;color:#555;margin:4px 0">Só “Dia” = um dia. “De/Até” = período. Em branco = todo o histórico.</p>
+    <button class="green" id="btnRelatorioOk" style="margin-top:6px">📄 Baixar relatório (CSV)</button>
+    <button class="green" id="btnPdf" style="margin-top:6px">🖨️ Imprimir / PDF</button>
   </div>
 
   <div class="box-danger">
@@ -157,6 +166,10 @@ function carregarSelectsTecnicos() {
   };
   fill($('mt'), '— deixar sem técnico por enquanto —');
   fill($('selTech'), '— remover técnico (deixar livre) —');
+  const rt = $('rTec'), vr = rt.value;
+  rt.innerHTML = '<option value="">Todos os técnicos</option>';
+  Object.values(tecs).forEach(t => rt.appendChild(new Option(t.nome + ' (' + t.email + ')', t.email)));
+  rt.value = vr;
   
   const tl = $('tl'); tl.innerHTML = '';
   Object.entries(tecs).forEach(([k, t]) => {
@@ -164,101 +177,88 @@ function carregarSelectsTecnicos() {
   });
 }
 
-// Relatório CSV (Concluídos)
-$('btnRelatorioOk').onclick = () => {
-  const registros = Object.values(concluidosLog);
-  if (registros.length === 0) {
-    alert("Nenhum poste foi concluído/baixado ainda para gerar o relatório.");
-    return;
-  }
-
-  let csvContent = "\uFEFFNumero_Poste;Data_Horario_Download\n";
-  registros.forEach(item => {
-    csvContent += `"${item.code}";"${item.dataHora}"\n`;
+// ===== Relatórios: histórico de postes executados, com filtro de dia/período =====
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = d => d ? d.toLocaleString('pt-BR') : '';
+function parseBR(s) {
+  const m = String(s || '').match(/(\d{2})\/(\d{2})\/(\d{4})\D+(\d{2}):(\d{2})(?::(\d{2}))?/);
+  return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)) : null;
+}
+function filtroTexto() {
+  const dia = $('rDia').value, de = $('rDe').value, ate = $('rAte').value, t = $('rTec');
+  const br = v => v.split('-').reverse().join('/');
+  let x = dia ? 'Dia ' + br(dia) : (de || ate) ? 'Período ' + (de ? br(de) : 'do início') + ' a ' + (ate ? br(ate) : 'hoje') : 'Todo o histórico';
+  if (t.value) x += ' · Técnico: ' + t.options[t.selectedIndex].text;
+  return x;
+}
+async function registrosRelatorio() {
+  const metas = (await fdb.ref('adm/fotos_meta').once('value')).val() || {};
+  const lista = [];
+  Object.values(concluidosLog).forEach(l => lista.push({
+    code: l.code, tec: l.tec || '', nome: l.tecNome || '', rua: l.rua || '',
+    exec: l.execTime ? new Date(l.execTime) : parseBR(l.dataHora),
+    baixado: l.baixadoEm ? new Date(l.baixadoEm) : parseBR(l.dataHora), status: 'Baixado / concluído'
+  }));
+  const vistos = new Set();
+  Object.values(metas).sort((x, y) => String(x.time).localeCompare(String(y.time))).forEach(m => {
+    if (vistos.has(m.pid)) return; vistos.add(m.pid);
+    lista.push({ code: m.code, tec: m.tec || '', nome: m.tecNome || '', rua: m.rua || '',
+      exec: m.time ? new Date(m.time) : null, baixado: null, status: 'Foto recebida (não baixada)' });
   });
+  const dia = $('rDia').value, de = $('rDe').value, ate = $('rAte').value, tec = $('rTec').value;
+  const ini = dia ? new Date(dia + 'T00:00:00') : de ? new Date(de + 'T00:00:00') : null;
+  const fim = dia ? new Date(dia + 'T23:59:59.999') : ate ? new Date(ate + 'T23:59:59.999') : null;
+  return lista
+    .filter(r => (!tec || r.tec === tec) && (!ini || (r.exec && r.exec >= ini)) && (!fim || (r.exec && r.exec <= fim)))
+    .sort((x, y) => (x.exec || 0) - (y.exec || 0));
+}
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
+$('btnRelatorioOk').onclick = async () => {
+  const regs = await registrosRelatorio();
+  if (!regs.length) { alert('Nenhum registro no filtro escolhido.'); return; }
+  let csv = '\uFEFFNumero_Poste;Login_Tecnico;Nome_Tecnico;Rua;Data_Hora_Execucao;Data_Hora_Download;Situacao\n';
+  regs.forEach(r => {
+    csv += [r.code, r.tec, r.nome, r.rua, fmt(r.exec), fmt(r.baixado), r.status]
+      .map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(';') + '\n';
+  });
   const a = document.createElement('a');
-  a.href = url;
-  a.download = `Relatorio_Postes_OK_${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  a.download = 'Relatorio_Postes_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
 };
 
-// Relatório em PDF
 $('btnPdf').onclick = async () => {
-  const snapshots = await Promise.all([
-    fdb.ref('adm/fotos_meta').once('value'),
-    fdb.ref('adm/postes').once('value')
-  ]);
-  
-  const metas = snapshots[0].val() || {};
-  const listaExecucoes = Object.values(metas);
-
-  if (listaExecucoes.length === 0) {
-    alert("Nenhuma execução com foto encontrada para gerar o relatório.");
-    return;
-  }
-
-  const janelaPrint = window.open('', '_blank');
-  let htmlConteudo = `
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8">
-      <title>Relatório de Execução de Postes</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 20px; color: #111; }
-        h2 { text-align: center; color: #1d6fe8; margin-bottom: 5px; }
-        p.sub { text-align: center; font-size: 13px; color: #555; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 10px; font-size: 13px; text-align: left; }
-        th { background-color: #f3f4f6; color: #333; }
-        tr:nth-child(even) { background-color: #f9fafb; }
-        .footer { margin-top: 30px; text-align: right; font-size: 12px; color: #777; }
-        @media print { button { display: none; } }
-      </style>
-    </head>
-    <body>
-      <h2>Relatório de Execução de Postes em Campo</h2>
-      <p class="sub">Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Nº do Poste</th>
-            <th>Login do Técnico</th>
-            <th>Endereço / Rua</th>
-            <th>Data e Horário da Foto</th>
-          </tr>
-        </thead>
-        <tbody>
-  `;
-
-  listaExecucoes.forEach(item => {
-    const dataFormatada = item.time ? new Date(item.time).toLocaleString('pt-BR') : 'Data não informada';
-    htmlConteudo += `
-      <tr>
-        <td><b>${item.code || '---'}</b></td>
-        <td>${item.tec || 'Não identificado'}</td>
-        <td>${item.rua || 'Localização via GPS'}</td>
-        <td>${dataFormatada}</td>
-      </tr>
-    `;
+  const w = window.open('', '_blank');
+  const regs = await registrosRelatorio();
+  if (!regs.length) { if (w) w.close(); alert('Nenhum registro no filtro escolhido.'); return; }
+  if (!w) { alert('O navegador bloqueou a janela de impressão. Libere pop-ups para este site.'); return; }
+  const porTec = {};
+  regs.forEach(r => { const k = r.tec || 'Não identificado'; porTec[k] = (porTec[k] || 0) + 1; });
+  const resumo = Object.entries(porTec).map(([k, n]) => esc(k) + ': <b>' + n + '</b>').join(' &nbsp;·&nbsp; ');
+  let h = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório de Postes Executados</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:20px;color:#111}
+  h2{text-align:center;color:#1d6fe8;margin:0 0 4px}
+  p.sub{text-align:center;font-size:13px;color:#555;margin:2px 0}
+  p.res{font-size:13px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{border:1px solid #ddd;padding:7px;font-size:12px;text-align:left}
+  th{background:#f3f4f6} tr:nth-child(even){background:#f9fafb}
+  .footer{margin-top:20px;text-align:right;font-size:11px;color:#777}
+</style></head><body>
+<h2>Relatório de Postes Executados</h2>
+<p class="sub"><b>${esc(filtroTexto())}</b></p>
+<p class="sub">Gerado em ${esc(new Date().toLocaleString('pt-BR'))} por ${esc((au.currentUser && au.currentUser.email) || '')}</p>
+<p class="res">Total: <b>${regs.length}</b> poste(s) &nbsp;|&nbsp; ${resumo}</p>
+<table><thead><tr><th>Nº do poste</th><th>Login do técnico</th><th>Rua</th><th>Data e hora da execução</th><th>Situação</th></tr></thead><tbody>`;
+  regs.forEach(r => {
+    h += `<tr><td><b>${esc(r.code)}</b></td><td>${esc(r.tec || 'Não identificado')}${r.nome ? '<br><small>' + esc(r.nome) + '</small>' : ''}</td>
+<td>${esc(r.rua || 'Localização via GPS')}</td><td>${esc(fmt(r.exec) || 'Data não informada')}</td><td>${esc(r.status)}</td></tr>`;
   });
-
-  htmlConteudo += `
-        </tbody>
-      </table>
-      <div class="footer"><p>Sistema de Gestão de Rotas e Fotos · Total de registros: ${listaExecucoes.length}</p></div>
-      <script>window.onload = function() { window.print(); }<\/script>
-    </body>
-    </html>
-  `;
-
-  janelaPrint.document.write(htmlConteudo);
-  janelaPrint.document.close();
+  h += `</tbody></table><div class="footer">Sistema de Gestão de Rotas e Fotos · ${regs.length} registro(s)</div>
+<script>window.onload = function() { window.print(); }<\/script></body></html>`;
+  w.document.write(h);
+  w.document.close();
 };
 
 // Botão Zerar Banco com Senha
@@ -417,7 +417,12 @@ function atualizarMapa() {
         const logId = 'log_' + Date.now() + '_' + Math.floor(Math.random()*1000);
 
         const updates = {};
-        updates[`adm/concluidos_log/${logId}`] = { code: p.code, dataHora: dataHoraAtual };
+        updates[`adm/concluidos_log/${logId}`] = {
+          code: p.code, dataHora: dataHoraAtual, baixadoEm: new Date().toISOString(),
+          baixadoPor: (au.currentUser && au.currentUser.email) || '',
+          execTime: fotoMeta.time || '', tec: fotoMeta.tec || p.tec || '', tecNome: fotoMeta.tecNome || p.tecNome || '',
+          rua: fotoMeta.rua || '', rota: p.rota || '', lat: p.lat, lng: p.lng
+        };
         updates[`adm/postes/${id}`] = null;
         updates[`adm/fotos_meta/${fotoKey}`] = null;
         updates[`adm/fotos_data/${fotoKey}`] = null;
