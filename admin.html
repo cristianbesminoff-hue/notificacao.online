@@ -37,6 +37,7 @@
   
   .box-sel{background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px;margin-top:10px}
   .box-danger{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:10px}
+  .box-report{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -104,6 +105,12 @@
     <option value="green">🟢 Executados (com foto)</option>
   </select>
 
+  <!-- RODAPÉ DE RELATÓRIOS -->
+  <div class="box-report">
+    <label style="color:#166534">📊 Relatórios</label>
+    <button class="green" id="btnRelatorioOk" style="margin-top:6px">📄 Baixar Relatório OK (Concluídos)</button>
+  </div>
+
   <div class="box-danger">
     <label style="color:#991b1b">⚠️ Zona de Perigo</label>
     <button class="danger" id="btnZerar" style="margin-top:6px">🗑️ Zerar Mapa / Excluir Zona</button>
@@ -117,7 +124,7 @@ firebase.initializeApp(firebaseConfig);
 const fdb = firebase.database(), au = firebase.auth();
 const $ = id => document.getElementById(id);
 
-let po = {}, meta = {}, tecs = {}, markers = {};
+let po = {}, meta = {}, tecs = {}, concluidosLog = {}, markers = {};
 let selectedIds = new Set();
 let selectMode = false;
 
@@ -136,6 +143,7 @@ au.onAuthStateChanged(u => {
   
   fdb.ref('adm/postes').on('value', s => { po = s.val() || {}; atualizarMapa(); });
   fdb.ref('adm/fotos_meta').on('value', s => { meta = s.val() || {}; atualizarMapa(); });
+  fdb.ref('adm/concluidos_log').on('value', s => { concluidosLog = s.val() || {}; });
   fdb.ref('adm/tecnicos').on('value', s => { tecs = s.val() || {}; carregarSelectsTecnicos(); atualizarMapa(); });
 });
 
@@ -155,9 +163,35 @@ function carregarSelectsTecnicos() {
   });
 }
 
+// ==========================================
+// RELATÓRIO DE OK (CONCLUÍDOS)
+// ==========================================
+$('btnRelatorioOk').onclick = () => {
+  const registros = Object.values(concluidosLog);
+  if (registros.length === 0) {
+    alert("Nenhum poste foi concluído/baixado ainda para gerar o relatório.");
+    return;
+  }
+
+  // Cria o conteúdo do CSV (Separado por ponto e vírgula para abrir perfeitamente no Excel)
+  let csvContent = "\uFEFFNumero_Poste;Data_Horario_Download\n";
+  registros.forEach(item => {
+    csvContent += `"${item.code}";"${item.dataHora}\n`;
+  });
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Relatorio_Postes_OK_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+
 // Botão Zerar Banco com Senha
 $('btnZerar').onclick = async () => {
-  const senhaDigitada = prompt("⚠️ ATENÇÃO: Isso vai apagar TODOS os postes e fotos da base de dados.\n\nPara confirmar, digite a sua senha de Administrador:");
+  const senhaDigitada = prompt("⚠️ ATENÇÃO: Isso vai apagar TODOS os postes, fotos e histórico de relatórios da base de dados.\n\nPara confirmar, digite a sua senha de Administrador:");
   if (!senhaDigitada) return;
 
   const user = au.currentUser;
@@ -169,12 +203,13 @@ $('btnZerar').onclick = async () => {
       'adm/postes': null,
       'adm/fila': null,
       'adm/fotos_meta': null,
-      'adm/fotos_data': null
+      'adm/fotos_data': null,
+      'adm/concluidos_log': null
     });
     
     selectedIds.clear();
     atualizarUI_Selecao();
-    alert('Mapa zerado com sucesso.');
+    alert('Mapa e relatórios zerados com sucesso.');
   } catch (err) {
     alert('Senha incorreta ou erro!');
   }
@@ -231,7 +266,7 @@ async function atribuirPostes(idsArray, tecKey) {
   const up = {};
   idsArray.forEach(id => {
     const p = po[id]; if (!p) return;
-    if (p.tec) up[`adm/fila/${p.tec.replace(/\./g, ',')}/${id}`] = null;
+    if (p.tec) up[`adm/fila/${p.tec.replace(/\./g,  ',')}/${id}`] = null;
     up[`adm/postes/${id}/tec`] = t ? t.email : '';
     up[`adm/postes/${id}/tecNome`] = t ? t.nome : '';
     if (t) up[`adm/fila/${tecKey}/${id}`] = { id: p.id, n: p.n, code: p.code, lat: p.lat, lng: p.lng };
@@ -257,7 +292,6 @@ function atualizarMapa() {
   let coords = [];
 
   Object.entries(po).forEach(([id, p]) => {
-    // Procura se existe foto enviada para este poste
     const fotoEntry = Object.entries(meta).find(([k, m]) => m.pid === id);
     const temFoto = !!fotoEntry;
     let estado = temFoto ? 'green' : 'red';
@@ -280,7 +314,6 @@ function atualizarMapa() {
       }
     });
 
-    // Popup do Poste
     const popDiv = document.createElement('div');
     popDiv.style.minWidth = '200px';
     popDiv.innerHTML = `<b>Poste: ${p.code}</b><br><small>Técnico: ${p.tecNome || 'Nenhum'}</small><br>`;
@@ -294,12 +327,11 @@ function atualizarMapa() {
       imgThumb.style.cssText = 'width:100%;height:120px;object-fit:cover;border-radius:4px;margin-top:6px;background:#eee';
       popDiv.appendChild(imgThumb);
 
-      // Carrega a imagem em Base64
       fdb.ref('adm/fotos_data/' + fotoKey + '/img').once('value').then(s => {
         if (s.val()) imgThumb.src = s.val();
       });
 
-      // Botão para Baixar e Excluir do Banco
+      // Botão para Baixar, Salvar no Relatório e Excluir do Banco
       const btnBaixarEApagar = document.createElement('button');
       btnBaixarEApagar.textContent = '📥 Baixar Foto e Concluir';
       btnBaixarEApagar.style.cssText = 'background:#16a34a;margin-top:8px;padding:6px';
@@ -307,27 +339,36 @@ function atualizarMapa() {
         const imgData = (await fdb.ref('adm/fotos_data/' + fotoKey + '/img').once('value')).val();
         if (!imgData) { alert('Erro ao buscar foto.'); return; }
 
-        // Faz o download automático
+        // Faz o download automático da foto
         const a = document.createElement('a');
         a.href = imgData;
         a.download = `POSTE-${p.code}.jpg`;
         document.body.appendChild(a); a.click(); a.remove();
 
-        // Remove do banco de dados (libera o poste)
+        const dataHoraAtual = new Date().toLocaleString('pt-BR');
+        const logId = 'log_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+
+        // Salva o registo histórico para o relatório de OK
         const updates = {};
+        updates[`adm/concluidos_log/${logId}`] = {
+          code: p.code,
+          dataHora: dataHoraAtual
+        };
+
+        // Remove o poste ativo e as fotos da base operacional
         updates[`adm/postes/${id}`] = null;
         updates[`adm/fotos_meta/${fotoKey}`] = null;
         updates[`adm/fotos_data/${fotoKey}`] = null;
         if (p.tec) {
           updates[`adm/fila/${p.tec.replace(/\./g, ',')}/${id}`] = null;
         }
+
         await fdb.ref().update(updates);
         map.closePopup();
       };
       popDiv.appendChild(btnBaixarEApagar);
 
     } else {
-      // Se não tem foto, permite alterar técnico individualmente
       const selInd = document.createElement('select');
       selInd.style.marginTop = '6px';
       selInd.innerHTML = '<option value="">— sem técnico —</option>';
@@ -412,7 +453,7 @@ $('imp').onclick = async () => {
 
     n++;
     const id = stamp + '_' + n;
-    const p = { id, n, code: String(r[ci] || '---').trim(), lat, lng, tec: t ? t.email : '', tecNome: t ? t.nome : '' };
+    const p = { id, n, code: String(r[ci] || '---').trim(), lat, lng, t: t ? t.email : '', tec: t ? t.email : '', tecNome: t ? t.nome : '' };
     up['adm/postes/' + id] = p;
     if (t) up['adm/fila/' + tk + '/' + id] = p;
   });
