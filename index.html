@@ -66,7 +66,7 @@ const map = L.map('map', { zoomControl: false }).setView([-14.2, -51.9], 4);
 L.control.zoom({ position: 'topright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-// Geolocalização contínua do técnico
+// Acompanha a geolocalização do técnico em tempo real
 map.locate({ watch: true, enableHighAccuracy: true });
 map.on('locationfound', e => {
   lastPos = e.latlng;
@@ -133,19 +133,70 @@ function carregarPontosTecnico(email) {
   });
 }
 
-// Função para buscar o nome da rua através da API reversa do Nominatim (OpenStreetMap)
+// Descobre o nome da rua via API OpenStreetMap
 async function obterNomeRua(lat, lng) {
   try {
     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
     const data = await res.json();
     if (data && data.address) {
-      return data.address.road || data.address.pedestrian || data.address.suburb || 'Localização via GPS';
+      return data.address.road || data.address.pedestrian || data.address.suburb || 'Endereço não localizado';
     }
   } catch(e) {}
-  return 'Localização via GPS';
+  return 'GPS Ativo';
 }
 
-// Captura Foto, Descobre a Rua e Envia
+// Função para desenhar as informações direto na imagem (Carimbo)
+function carimbarImagem(file, dados) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        
+        // Desenha a foto original
+        ctx.drawImage(img, 0, 0);
+
+        // Configurações do fundo preto semi-transparente para o texto
+        const fontSize = Math.max(20, Math.floor(canvas.width * 0.035));
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        const padding = 15;
+        const lineHeight = fontSize + 8;
+        
+        const linhas = [
+          `POSTE: ${dados.code}`,
+          `RUA: ${dados.rua}`,
+          `GPS: ${dados.lat}, ${dados.lng}`,
+          `DATA: ${dados.dataHora}`
+        ];
+
+        const boxHeight = (linhas.length * lineHeight) + (padding * 2);
+        const boxWidth = canvas.width;
+
+        // Fundo preto no topo da foto
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillRect(0, 0, boxWidth, boxHeight);
+
+        // Escreve os textos em branco
+        ctx.fillStyle = '#ffffff';
+        let y = padding + fontSize;
+        linhas.forEach(texto => {
+          ctx.fillText(texto, padding, y);
+          y += lineHeight;
+        });
+
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Captura Foto, Pega Localização, Carimba e Envia
 $('cam').onchange = async (e) => {
   const file = e.target.files[0];
   const p = currentPt;
@@ -154,39 +205,43 @@ $('cam').onchange = async (e) => {
 
   $('msg').textContent = 'Obtendo GPS e endereço...';
   
-  let ruaNome = 'Desconhecida';
-  if (lastPos) {
-    ruaNome = await obterNomeRua(lastPos.lat, lastPos.lng);
-  }
+  let lat = lastPos ? lastPos.lat : p.lat;
+  let lng = lastPos ? lastPos.lng : p.lng;
+  let ruaNome = await obterNomeRua(lat, lng);
+  let agora = new Date().toLocaleString('pt-BR');
 
-  $('msg').textContent = 'Processando foto...';
-  
-  const reader = new FileReader();
-  reader.onload = async (event) => {
-    const base64Img = event.target.result;
-    const fotoId = 'foto_' + Date.now();
-    const user = au.currentUser;
+  $('msg').textContent = 'Carimbando dados na foto...';
 
-    try {
-      const updates = {};
-      updates['adm/fotos_meta/' + fotoId] = {
-        pid: p.id,
-        code: p.code,
-        tec: user.email,
-        rua: ruaNome,
-        time: new Date().toISOString(),
-        gps: lastPos ? { lat: lastPos.lat, lng: lastPos.lng } : null
-      };
-      updates['adm/fotos_data/' + fotoId + '/img'] = base64Img;
-
-      await fdb.ref().update(updates);
-      $('msg').textContent = `Enviado (${ruaNome})!`;
-      map.closePopup();
-    } catch(err) {
-      $('msg').textContent = 'Erro ao enviar foto.';
-    }
+  const dadosCarimbo = {
+    code: p.code,
+    rua: ruaNome,
+    lat: lat.toFixed(6),
+    lng: lng.toFixed(6),
+    dataHora: agora
   };
-  reader.readAsDataURL(file);
+
+  const fotoBase64Carimbada = await carimbarImagem(file, dadosCarimbo);
+  const fotoId = 'foto_' + Date.now();
+  const user = au.currentUser;
+
+  try {
+    const updates = {};
+    updates['adm/fotos_meta/' + fotoId] = {
+      pid: p.id,
+      code: p.code,
+      tec: user.email,
+      rua: ruaNome,
+      time: new Date().toISOString(),
+      gps: { lat, lng }
+    };
+    updates['adm/fotos_data/' + fotoId + '/img'] = fotoBase64Carimbada;
+
+    await fdb.ref().update(updates);
+    $('msg').textContent = 'Enviado com sucesso!';
+    map.closePopup();
+  } catch(err) {
+    $('msg').textContent = 'Erro ao enviar foto.';
+  }
 };
 
 $('fit').onclick = () => {
