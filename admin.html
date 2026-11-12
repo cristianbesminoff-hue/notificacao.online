@@ -32,6 +32,7 @@
   
   .pin{color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-weight:700;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .1s}
   .pin-red{background:#dc2626}
+  .pin-yellow{background:#facc15;color:#111}
   .pin-green{background:#16a34a}
   .pin.selected{border:3px solid #facc15;box-shadow:0 0 0 3px #1d6fe8;transform:scale(1.25);z-index:999!important}
   
@@ -100,8 +101,8 @@
   <label>Filtrar Status no Mapa</label>
   <select id="fe">
     <option value="">Todos os Status</option>
-    <option value="unassigned">⚠️ Sem técnico atribuído</option>
-    <option value="red">🔴 Pendentes (com técnico)</option>
+    <option value="unassigned">🔴 Sem técnico atribuído</option>
+    <option value="yellow">🟡 Atribuídos (aguardando foto)</option>
     <option value="green">🟢 Executados (com foto)</option>
   </select>
 
@@ -364,7 +365,7 @@ function atualizarMapa() {
   Object.entries(po).forEach(([id, p]) => {
     const fotoEntry = Object.entries(meta).find(([k, m]) => m.pid === id);
     const temFoto = !!fotoEntry;
-    let estado = temFoto ? 'green' : 'red';
+    let estado = temFoto ? 'green' : (p.tec ? 'yellow' : 'red');
 
     if (filtro === 'unassigned' && p.tec) return;
     if (filtro && filtro !== 'unassigned' && estado !== filtro) return;
@@ -374,6 +375,14 @@ function atualizarMapa() {
     
     const icon = L.divIcon({ className: '', html: `<div class="${pinClass}">${p.n || '📍'}</div>`, iconSize: [26,26], iconAnchor: [13,13] });
     const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
+
+    const tip = document.createElement('div');
+    const t1 = document.createElement('b'); t1.textContent = 'Poste ' + p.code;
+    const t2 = document.createElement('div'); t2.textContent = p.tecNome ? '👷 ' + p.tecNome : '⚠️ Sem técnico atribuído';
+    tip.append(t1, t2);
+    if (p.tec) { const t3 = document.createElement('small'); t3.textContent = p.tec; tip.appendChild(t3); }
+    if (temFoto) { const t4 = document.createElement('div'); t4.textContent = '🟢 Foto recebida'; tip.appendChild(t4); }
+    m.bindTooltip(tip, { direction: 'top', offset: [0, -12] });
     
     m.on('click', (e) => {
       if (selectMode) {
