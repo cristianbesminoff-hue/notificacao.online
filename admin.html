@@ -98,7 +98,14 @@
 
   <hr style="margin:12px 0;border:0;border-top:1px solid #eee">
   
-  <label>Filtrar Status no Mapa</label>
+  <!-- BARRINHA DE PESQUISA DE POSTES -->
+  <label style="color:#1d6fe8">🔍 Pesquisar Poste no Mapa</label>
+  <div class="row">
+    <input type="text" id="txtBuscaAdmin" placeholder="Ex: 1456 ou Poste 1441" style="margin-top:0">
+    <button id="btnBuscarAdmin" style="width:auto;padding:8px 14px;margin-top:0">Buscar</button>
+  </div>
+
+  <label style="margin-top:10px">Filtrar Status no Mapa</label>
   <select id="fe">
     <option value="">Todos os Status</option>
     <option value="unassigned">🔴 Sem técnico atribuído</option>
@@ -177,6 +184,36 @@ function carregarSelectsTecnicos() {
     tl.innerHTML += `<div style="padding:2px 0;border-bottom:1px solid #eee">${t.nome} · <small>${t.email}</small></div>`;
   });
 }
+
+// ===== Pesquisa de Poste no Admin =====
+$('btnBuscarAdmin').onclick = () => {
+  const termo = $('txtBuscaAdmin').value.trim().toLowerCase();
+  if (!termo) {
+    alert('Digite o código ou número do poste para buscar.');
+    return;
+  }
+
+  let encontradoId = null;
+  let encontradoObj = null;
+
+  for (const [id, p] of Object.entries(po)) {
+    const codeStr = String(p.code || '').toLowerCase();
+    const numStr = String(p.n || '').toLowerCase();
+    if (codeStr.includes(termo) || numStr.includes(termo)) {
+      encontradoId = id;
+      encontradoObj = p;
+      break;
+    }
+  }
+
+  if (encontradoObj && markers[encontradoId]) {
+    map.setView([encontradoObj.lat, encontradoObj.lng], 18);
+    markers[encontradoId].openPopup();
+    $('st').textContent = `Poste ${encontradoObj.code} localizado no mapa!`;
+  } else {
+    alert('Poste não encontrado na base de dados ativa.');
+  }
+};
 
 // ===== Relatórios: histórico de postes executados, com filtro de dia/período =====
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -527,7 +564,7 @@ $('imp').onclick = async () => {
 
     n++;
     const id = stamp + '_' + n;
-    const p = { id, n, code: String(r[ci] || '---').trim(), lat, lng, tec: t ? t.email : '', tecNome: t ? t.nome : '' };
+    const p = { id, n, code: String(r[ci] || '---').trim(), lat, lng, t: t ? t.email : '', tec: t ? t.email : '', tecNome: t ? t.nome : '' };
     up['adm/postes/' + id] = p;
     if (t) up['adm/fila/' + tk + '/' + id] = p;
   });
